@@ -224,10 +224,169 @@ class ImageAnalyzer:
             return "unknown"
 
 
+class VisualAnalyzer:
+    @staticmethod
+    def analyze_image(path):
+        try:
+            import cv2
+            import numpy as np
+        except ImportError:
+            return None
+
+        try:
+            img = cv2.imread(path)
+            if img is None:
+                return None
+            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            h, w = img.shape[:2]
+
+            result = {
+                "patterns": [],
+                "contrast": "medium",
+                "edge_density": "medium",
+                "has_particles": False,
+                "composition": "unknown",
+            }
+
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            contrast = gray.std()
+            if contrast > 70:
+                result["contrast"] = "high"
+            elif contrast < 30:
+                result["contrast"] = "low"
+            else:
+                result["contrast"] = "medium"
+
+            edges = cv2.Canny(gray, 50, 150)
+            edge_ratio = np.count_nonzero(edges) / (h * w)
+            if edge_ratio > 0.08:
+                result["edge_density"] = "high"
+                result["patterns"].append("detailed")
+            elif edge_ratio > 0.03:
+                result["edge_density"] = "medium"
+                result["patterns"].append("moderate detail")
+            else:
+                result["edge_density"] = "low"
+                result["patterns"].append("smooth")
+
+            blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+            laplacian_var = cv2.Laplacian(blurred, cv2.CV_64F).var()
+            if laplacian_var < 10:
+                result["patterns"].append("soft focus")
+            elif laplacian_var > 100:
+                result["patterns"].append("sharp")
+
+            # particle detection via contour analysis
+            _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            small_contours = [c for c in contours if 5 < cv2.contourArea(c) < 200]
+            n_small = len(small_contours)
+
+            # also try circle detection
+            circles = cv2.HoughCircles(blurred, cv2.HOUGH_GRADIENT, 1.2, 10,
+                                       param1=50, param2=20, minRadius=2, maxRadius=50)
+            n_circles = len(circles[0]) if circles is not None else 0
+
+            total_detected = n_small + n_circles
+            if total_detected > 30:
+                result["has_particles"] = True
+                result["patterns"].append("many particles")
+                result["patterns"].append("scattered")
+            elif total_detected > 8:
+                result["has_particles"] = True
+                result["patterns"].append("few particles")
+
+            hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+            saturation = hsv[:, :, 1].mean()
+            if saturation > 60:
+                result["patterns"].append("vibrant")
+            elif saturation < 20:
+                result["patterns"].append("desaturated")
+
+            if h > w * 1.2:
+                result["composition"] = "vertical"
+            elif w > h * 1.2:
+                result["composition"] = "wide"
+            else:
+                result["composition"] = "balanced"
+
+            return result
+        except Exception as e:
+            return None
+
+    @staticmethod
+    def analyze_video(path):
+        try:
+            import cv2
+            import numpy as np
+        except ImportError:
+            return None
+
+        try:
+            cap = cv2.VideoCapture(path)
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            if total_frames <= 0:
+                cap.release()
+                return None
+
+            # extract frame for image analysis
+            cap.set(cv2.CAP_PROP_POS_FRAMES, total_frames // 2)
+            ret, mid_frame = cap.read()
+            frame_analysis = None
+            if ret:
+                temp_frame = path + "_vframe.jpg"
+                cv2.imwrite(temp_frame, mid_frame)
+                frame_analysis = VisualAnalyzer.analyze_image(temp_frame)
+                try:
+                    os.remove(temp_frame)
+                except:
+                    pass
+
+            sample_frames = min(5, total_frames)
+            prev_gray = None
+            motion_values = []
+
+            for i in range(sample_frames):
+                cap.set(cv2.CAP_PROP_POS_FRAMES, int(i * total_frames / sample_frames))
+                ret, frame = cap.read()
+                if not ret:
+                    continue
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                if prev_gray is not None:
+                    diff = cv2.absdiff(prev_gray, gray)
+                    motion_values.append(np.mean(diff))
+                prev_gray = gray
+
+            cap.release()
+            avg_motion = np.mean(motion_values) if motion_values else 0
+
+            result = {
+                "has_motion": avg_motion > 8,
+                "motion_level": "high" if avg_motion > 25 else "medium" if avg_motion > 8 else "low",
+                "total_frames": total_frames,
+                "fps": fps,
+                "frame": frame_analysis,
+            }
+            return result
+        except Exception as e:
+            return None
+
+    @staticmethod
+    def analyze(filepath):
+        ext = Path(filepath).suffix.lower()
+        if ext in [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff"]:
+            return VisualAnalyzer.analyze_image(filepath)
+        if ext in [".mp4", ".mov", ".avi"]:
+            return VisualAnalyzer.analyze_video(filepath)
+        return None
+
+
 class KeywordEngine:
     def __init__(self):
         self.db = self._build_database()
         self.analyzer = ImageAnalyzer()
+        self.visual_analyzer = VisualAnalyzer()
 
     def _build_database(self):
         return {
@@ -837,12 +996,13 @@ class KeywordEngine:
 
     def generate_from_file(self, filepath, platform="Adobe Stock", num_keywords=50, num_titles=3, num_desc=1):
         analysis = self.analyzer.analyze(filepath)
+        analysis["visual"] = self.visual_analyzer.analyze(filepath)
         base_concept = self._extract_concept_from_analysis(analysis)
         platform_config = PLATFORM_CONFIG.get(platform, PLATFORM_CONFIG["Adobe Stock"])
         max_kw = min(num_keywords, platform_config["max_keywords"])
 
-        keywords = self._generate_file_keywords(base_concept, analysis, max_kw)
         titles = self._generate_file_titles(base_concept, analysis, platform, num_titles)
+        keywords = self._generate_file_keywords(base_concept, analysis, max_kw, titles)
         kw_str = ", ".join(keywords)
 
         rows = []
@@ -851,107 +1011,155 @@ class KeywordEngine:
                 "filename": f"{analysis['filename']}_{i+1}{analysis['extension']}",
                 "title": titles[i][:platform_config.get("title_max_length", 200)],
                 "keywords": kw_str,
-                "category": self._guess_category(base_concept)
+                "category": self._guess_category(analysis)
             }))
         return rows, analysis
 
     def _extract_concept_from_analysis(self, analysis):
-        fname = analysis["filename"].lower().replace("_", " ").replace("-", " ").replace(".", " ")
-        fname = " ".join(fname.split())
+        colors = [c["name"] for c in analysis["dominant_colors"][:3]]
+        col_str = " and ".join(colors) if colors else ""
 
-        stop_words = {"img", "image", "photo", "picture", "dsc", "dscn", "img_",
-                     "photo_", "pic", "untitled", "screenshot", "export", "render",
-                     "new", "copy", "final", "edit", "edited", "backup"}
-        words = fname.split()
-        meaningful = [w for w in words if w.lower() not in stop_words and len(w) > 2]
+        if analysis["file_type"] == "video":
+            concept = "animated visuals"
+        elif analysis["file_type"] == "photo":
+            concept = "scene"
+        else:
+            concept = "design element"
 
-        if meaningful:
-            return " ".join(meaningful[:3])
+        if col_str:
+            concept = f"{col_str} {concept}"
 
-        colors = [c["name"] for c in analysis["dominant_colors"][:2]]
-        if colors:
-            base = f"{' and '.join(colors)}"
-            if analysis["orientation"] != "unknown":
-                base += f" {analysis['orientation']}"
-            if analysis["file_type"] != "unknown":
-                base += f" {analysis['file_type']}"
-            textural_qualities = []
-            if analysis["has_transparency"]:
-                textural_qualities.append("transparent")
-            if analysis["brightness"] in ["dark", "very dark"]:
-                textural_qualities.append("dark")
-            elif analysis["brightness"] in ["bright", "very bright"]:
-                textural_qualities.append("bright")
-            if textural_qualities:
-                base = f"{' '.join(textural_qualities)} {base}"
-            return base
+        if analysis["orientation"] != "unknown" and analysis["file_type"] != "video":
+            concept += f" {analysis['orientation']}"
 
-        return analysis["file_type"].title()
+        if analysis["has_transparency"]:
+            concept = f"transparent {concept}"
 
-    def _generate_file_keywords(self, base_concept, analysis, max_keywords=50):
+        return concept
+
+    def _generate_file_keywords(self, base_concept, analysis, max_keywords=50, titles=None):
         keywords = []
         used = set()
 
         def push(word):
-            w = word.lower().strip()
-            if w and w not in used:
+            w = word.lower().strip().strip(",")
+            if w and w not in used and len(w) > 1:
                 keywords.append(w)
                 used.add(w)
 
-        push(base_concept)
+        colors = [c["name"] for c in analysis["dominant_colors"][:3]]
+        is_dark = analysis["brightness"] in ["dark", "very dark"]
+        is_bright = analysis["brightness"] in ["bright", "very bright"]
+        is_video = analysis["file_type"] == "video"
+        vis = analysis.get("visual") or {}
+        frame = vis.get("frame") if is_video else vis
 
-        for w in base_concept.split():
-            push(w)
+        # 1. Type & format
+        if is_video:
+            push("video"), push("footage"), push("stock video")
+            push("motion graphic"), push("animation"), push("loop")
+            push("overlay"), push("hd video")
+            if analysis.get("width", 0) >= 3840:
+                push("4k"), push("ultra hd")
+        else:
+            push("photo"), push("photograph"), push("stock photo")
+            push("high resolution")
 
-        push(analysis["filename"].lower())
+        # 2. Colors
+        for c in colors:
+            push(c)
+            push(f"{c} color")
+        if is_dark:
+            push("dark")
+        elif is_bright:
+            push("bright")
 
-        if analysis["file_type"] == "vector":
-            push("vector"), push("vector graphic"), push("vector illustration")
-            push("scalable vector"), push("svg"), push("vector art")
-        elif analysis["file_type"] == "photo":
-            push("photo"), push("photograph"), push("photography")
-            push("stock photo"), push("high resolution")
-        elif analysis["file_type"] == "video":
-            push("video"), push("footage"), push("motion graphic")
-            push("stock video"), push("hd video")
-        elif analysis["file_type"] == "design":
-            push("design"), push("graphic design"), push("creative design")
+        # 3. Visual patterns from analysis
+        if frame:
+            pats = frame.get("patterns", [])
+            if "many particles" in pats or "few particles" in pats:
+                push("particle"), push("particles")
+                push("scattered"), push("floating")
+            if "smooth" in pats:
+                push("smooth"), push("soft"), push("gentle")
+            if "vibrant" in pats:
+                push("vibrant"), push("colorful")
+            if "sharp" in pats:
+                push("sharp"), push("crisp")
+            if frame.get("has_particles"):
+                push("particle effect"), push("particle animation")
+            if frame.get("contrast") == "high":
+                push("high contrast"), push("dramatic")
+            elif frame.get("contrast") == "low":
+                push("soft contrast"), push("subtle")
+            if frame.get("edge_density") == "low":
+                push("minimalist")
+            elif frame.get("edge_density") == "high":
+                push("detailed"), push("intricate")
 
-        if analysis["orientation"] == "landscape":
+        # 4. Motion (video)
+        if is_video:
+            ml = vis.get("motion_level", "low")
+            if ml == "high":
+                push("dynamic"), push("energetic"), push("flowing")
+            elif ml == "medium":
+                push("gentle motion"), push("floating")
+            push("seamless loop"), push("motion sequence")
+            push("falling"), push("drifting")
+
+        # 5. Atmosphere from brightness
+        if is_dark:
+            push("dark"), push("atmospheric"), push("moody")
+            push("night"), push("dramatic"), push("mysterious")
+        elif is_bright:
+            push("bright"), push("airy"), push("clear"), push("light")
+        else:
+            push("natural"), push("soft")
+
+        # 6. Abstract & stock context
+        push("abstract"), push("background")
+        push("graphic"), push("design"), push("element")
+        push("visual"), push("texture"), push("pattern")
+        if is_video:
+            push("animated background"), push("motion background")
+            push("stock footage"), push("video loop")
+
+        # 7. Orientation
+        ori = analysis.get("orientation", "")
+        if ori == "landscape":
             push("landscape"), push("horizontal"), push("wide")
-        elif analysis["orientation"] == "portrait":
-            push("portrait"), push("vertical")
-        elif analysis["orientation"] == "square":
-            push("square"), push("square format")
+        elif ori == "portrait":
+            push("portrait"), push("vertical"), push("tall")
 
-        analysis_kw = self._keywords_from_analysis(analysis)
-        for kw in analysis_kw:
-            push(kw)
-
-        for c in analysis["dominant_colors"][:3]:
-            push(c["name"])
-            push(f"{c['name']} color")
-
-        if analysis["brightness"] != "unknown":
-            push(analysis["brightness"])
-
-        if analysis["has_transparency"]:
+        # 8. Transparency
+        if analysis.get("has_transparency"):
             push("transparent background"), push("transparency")
-            push("isolated"), push("cut out")
+            push("isolated"), push("cut out"), push("alpha channel")
 
-        if analysis["width"] and analysis["height"]:
-            push(f"{analysis['width']}x{analysis['height']}")
-            if analysis["width"] >= 3840:
-                push("4k"), push("ultra hd"), push("high resolution")
-            elif analysis["width"] >= 1920:
-                push("full hd"), push("hd"), push("high quality")
+        # 9. Resolution
+        w = analysis.get("width", 0)
+        h = analysis.get("height", 0)
+        if w and h:
+            push(f"{w}x{h}")
+            if w >= 3840:
+                push("ultra hd"), push("4k resolution")
+            elif w >= 1920:
+                push("full hd"), push("hd resolution")
+            elif w >= 1280:
+                push("hd ready")
 
-        matched_kw = self.generate_keywords(base_concept, max_keywords=100)
-        for kw in matched_kw:
-            push(kw)
+        # 10. Words from generated titles (if provided)
+        if titles:
+            for t in titles:
+                for w in t.lower().split():
+                    w = w.strip(",.;:!?").strip()
+                    if len(w) > 3 and w not in ["with", "that", "this", "from", "across", "loop"]:
+                        push(w)
 
-        push("royalty free"), push("stock image"), push("stock photography")
-        push("download"), push("commercial use"), push("creative project")
+        # 11. Stock suffixes (limit to keep room)
+        for s in ["royalty free", "stock image", "stock photography",
+                   "commercial use", "creative project", "download"]:
+            push(s)
 
         return keywords[:max_keywords]
 
@@ -971,108 +1179,134 @@ class KeywordEngine:
         return result
 
     def _generate_file_titles(self, base_concept, analysis, platform, count=3):
-        base = base_concept.lower().strip() if base_concept else "abstract"
-        col_names = [c["name"] for c in analysis["dominant_colors"][:3]]
-        col = " and ".join(col_names) if col_names else ""
-        bright = analysis["brightness"] if analysis["brightness"] != "unknown" else ""
+        colors = [c["name"] for c in analysis["dominant_colors"][:3]]
+        is_dark = analysis["brightness"] in ["dark", "very dark"]
+        is_bright = analysis["brightness"] in ["bright", "very bright"]
         is_video = analysis["file_type"] == "video"
+        vis = analysis.get("visual") or {}
+        frame = vis.get("frame") if is_video else vis
 
-        # Build scene description from colors + brightness
-        if bright == "dark" or bright == "very dark":
-            depth = random.choice(["deep", "dark", "moody", "atmospheric"])
-        elif bright == "bright" or bright == "very bright":
-            depth = random.choice(["light", "bright", "airy", "clear", "soft"])
-        else:
-            depth = random.choice(["soft", "vibrant", "smooth", "natural", "minimal"])
+        c1 = colors[0] if len(colors) > 0 else ""
+        c2 = colors[1] if len(colors) > 1 else ""
+        c3 = colors[2] if len(colors) > 2 else ""
 
-        # Scene backdrop constructions
-        if col:
-            bg = random.choice([
-                f"a {depth} {col} background",
-                f"a {col} {depth} backdrop",
-                f"a {depth} {col} sky",
-                f"a {col} {depth} atmosphere",
-            ])
-            scene_in = random.choice([
-                f"in a {depth} {col} atmosphere",
-                f"against a {col} {depth} backdrop",
-                f"across a {depth} {col} background",
-                f"in a {col} {depth} setting",
-            ])
-            col_prefix = col.title() + " "
+        def has_darkword(s):
+            return any(w in s.lower() for w in ["dark", "deep", "black", "night", "midnight"])
+        def has_lightword(s):
+            return any(w in s.lower() for w in ["light", "bright", "white", "clear", "pale", "soft"])
+
+        # deduplicate colors
+        unique_colors = []
+        for c in [c1, c2]:
+            if c and c not in unique_colors:
+                unique_colors.append(c)
+        uc1 = unique_colors[0] if len(unique_colors) > 0 else ""
+        uc2 = unique_colors[1] if len(unique_colors) > 1 else ""
+
+        depth = "dark" if is_dark else "bright" if is_bright else ""
+        use_depth = bool(depth) and not (has_darkword(uc1) or has_darkword(uc2) or has_lightword(uc1) or has_lightword(uc2))
+
+        if uc1 and uc2:
+            bg = f"{depth + ' ' if use_depth else ''}{uc1} and {uc2} background"
+        elif uc1:
+            bg = f"{depth + ' ' if use_depth else ''}{uc1} background"
         else:
-            bg = f"a {depth} background"
-            scene_in = f"in a {depth} atmosphere"
-            col_prefix = ""
+            bg = f"{depth} background" if depth else "dark background"
+
+        has_particles = False
+        has_detail = False
+        is_smooth = False
+        motion_level = "low"
+
+        if frame:
+            has_particles = frame.get("has_particles", False)
+            pats = frame.get("patterns", [])
+            has_detail = "detailed" in pats
+            is_smooth = "smooth" in pats
+            if "vibrant" in pats:
+                pass  # may influence choices
+        if is_video and vis:
+            motion_level = vis.get("motion_level", "low")
 
         templates = []
 
         if is_video:
-            # Pattern: "Animated [adj] [subject] [verb-ing] on [scene]"
-            templates.append(f"Animated {col_prefix}{base} on {bg}")
-            templates.append(f"Animated {col_prefix}{base} floating and drifting on {bg}")
-            templates.append(f"Seamless loop of animated {col_prefix}{base} on {bg}")
-            templates.append(f"Motion sequence of {col_prefix}{base} {scene_in}")
-            templates.append(f"Animated overlay of {col_prefix}{base} on {bg}")
+            if has_particles or "particle" in base_concept.lower():
+                if "stars" in base_concept.lower():
+                    templates.append(f"Shimmering stars twinkling on a {bg}")
+                    templates.append(f"Countless stars shimmering on a {bg}")
+                    templates.append(f"Animated starry overlay on a {bg}")
+                else:
+                    col_subj = f"{uc1} " if uc1 and not has_darkword(uc1) and not has_lightword(uc1) else ""
+                    templates.append(f"Falling {col_subj}particles animation on a {bg}")
+                    templates.append(f"Floating {col_subj}particles on a {bg}")
+                    templates.append(f"Drifting {col_subj}particles across a {bg}")
+                    templates.append(f"Animated {col_subj}particle overlay on a {bg}")
+                    templates.append(f"Seamless loop of {col_subj}particles on a {bg}")
+                    if is_dark or has_darkword(bg):
+                        templates.append(f"Glowing {col_subj}particles floating on a {bg}")
+            elif motion_level == "high":
+                templates.append(f"Dynamic animated motion graphics on a {bg}")
+                templates.append(f"Seamless loop of animated visuals on a {bg}")
+                templates.append(f"Motion sequence of animated elements on a {bg}")
+            elif is_smooth:
+                templates.append(f"Animated motion graphics overlay on a {bg}")
+                templates.append(f"Seamless loop of animated visuals on a {bg}")
+                templates.append(f"Gentle animated overlay sequence on a {bg}")
+            else:
+                templates.append(f"Animated motion graphics overlay on a {bg}")
+                templates.append(f"Seamless loop of animated visuals on a {bg}")
+                templates.append(f"Floating elements on a {bg}")
 
+            templates = [t for t in templates if t]
         else:
-            templates.append(f"Beautiful {col_prefix}{base} with natural lighting on {bg}")
-            templates.append(f"Stunning view of {col_prefix}{base} {scene_in}")
-            templates.append(f"{col_prefix}{base.title()} captured in {depth} natural light on {bg}")
-            templates.append(f"Serene {col_prefix}{base} landscape on {bg}")
-            if analysis["orientation"] == "landscape":
-                templates.append(f"Wide angle view of {col_prefix}{base} across {bg}")
+            if has_particles:
+                templates.append(f"Scattered particles detail on a {bg}")
+            elif has_detail:
+                templates.append(f"Detailed scene captured in natural light on a {bg}")
+            else:
+                templates.append(f"Beautiful scene with soft natural lighting on a {bg}")
+                templates.append(f"Serene landscape scene on a {bg}")
+            if analysis.get("orientation") == "landscape":
+                templates.append(f"Wide angle view across a {bg}")
+
+        if not templates:
+            templates.append(f"Stock visual on a {bg}")
 
         return random.sample(templates, min(count, len(templates)))
 
     def _generate_file_descriptions(self, base_concept, analysis, keywords, platform, count=1):
-        base = base_concept.title() if base_concept else "Stock Image"
-        ft = analysis["file_type"].title() if analysis["file_type"] != "unknown" else "Image"
+        ft = "stock footage" if analysis["file_type"] == "video" else "stock photo"
         kw_sample = ", ".join(keywords[:12])
         dim = f"{analysis['width']}x{analysis['height']}" if analysis["width"] else "high resolution"
-        platform_name = platform
 
         templates = [
-            f"Discover this stunning {base} {ft}. Perfect for creative projects, "
-            f"marketing materials, and commercial use on {platform_name}. "
+            f"Discover this stunning {ft}. Perfect for creative projects, "
+            f"marketing materials, and commercial use on {platform}. "
             f"Features {kw_sample}. Ideal for designers, content creators, "
             f"and businesses seeking professional visual content. "
             f"Resolution: {dim}. Royalty-free license included.",
 
-            f"Explore our premium {base} {ft} collection. "
-            f"This versatile {ft.lower()} features {kw_sample}, "
-            f"making it perfect for websites, social media, presentations, and print materials. "
-            f"High-resolution format ({dim}) ensures crystal clear quality. "
-            f"Download instantly and use immediately in your creative projects.",
-
-            f"Professional {base} {ft} for your creative needs. "
-            f"This {ft.lower()} captures the essence of {kw_sample}. "
+            f"Professional {ft} capturing {kw_sample}. "
             f"Perfect for advertising, branding, web design, and editorial content. "
-            f"Resolution: {dim}. Enhanced and optimized for immediate use. "
-            f"Compatible with all major design software and platforms.",
+            f"Resolution: {dim}. Optimized for immediate use.",
 
-            f"Beautiful {base} {ft} showcasing {kw_sample}. "
+            f"Beautiful {ft} showcasing {kw_sample}. "
             f"This royalty-free {ft.lower()} is perfect for both personal and commercial projects. "
-            f"Features stunning composition, vibrant colors, and professional quality. "
-            f"Resolution: {dim}. Available for instant download.",
-
-            f"Captivating {base} {ft} featuring {kw_sample}. "
-            f"This versatile visual asset is perfect for creative professionals, "
-            f"marketers, and business owners. Resolution: {dim}. "
-            f"Includes standard royalty-free license for {platform_name}."
+            f"Resolution: {dim}. Available for instant download."
         ]
 
         return random.sample(templates, min(count, len(templates)))
 
     def get_platform_csv_headers(self, platform="Adobe Stock"):
-        return ["filename", "title", "keywords", "category"]
+        return ["Filename", "Title", "Keywords", "Category"]
 
     def get_platform_csv_row(self, row_data, platform="Adobe Stock"):
         return {
-            "filename": row_data.get("filename", ""),
-            "title": row_data.get("title", ""),
-            "keywords": row_data.get("keywords", ""),
-            "category": row_data.get("category", "1")
+            "Filename": row_data.get("filename", ""),
+            "Title": row_data.get("title", ""),
+            "Keywords": row_data.get("keywords", ""),
+            "Category": row_data.get("category", "8")
         }
 
     def move_file_with_rename(self, source_path, dest_dir, new_name=None):
@@ -1135,29 +1369,44 @@ class KeywordEngine:
                 })
         return results
 
-    def _guess_category(self, base_word):
-        base = base_word.lower()
-        best_cat = "Other"
-        best_score = 0
-        for cat_name, cat_data in self.db.items():
-            all_terms = cat_data.get("aliases", []) + cat_data.get("synonyms", [])
-            for subcat, items in cat_data.get("subjects", {}).items():
-                all_terms.extend(items)
-            for field in ["times", "seasons", "colors", "moods", "formats", "styles"]:
-                if field in cat_data:
-                    all_terms.extend(cat_data[field])
-            for term in all_terms:
-                tl = term.lower()
-                if base == tl:
-                    return cat_name.title()
-                if base in tl:
-                    score = len(base) / len(tl)
-                    if score > best_score:
-                        best_score = score
-                        best_cat = cat_name.title()
-                elif tl in base:
-                    score = len(tl) / len(base)
-                    if score > best_score:
-                        best_score = score
-                        best_cat = cat_name.title()
-        return best_cat
+    def _guess_category(self, analysis):
+        if isinstance(analysis, str):
+            w = analysis.lower()
+            import re
+            if re.search(r'bird|butterfly|animal|dog|cat|fish|wildlife|pet', w): return "1"
+            if re.search(r'flower|petal|blossom|tree|leaf|grass|plant|sakura|rose', w): return "14"
+            if re.search(r'sky|star|space|cloud|landscape|mountain|nature|sunset|sunrise|sun|moon', w): return "11"
+            return "8"
+
+        colors = [c["name"] for c in analysis.get("dominant_colors", [])[:3]]
+        vis = analysis.get("visual") or {}
+        frame = vis.get("frame", vis)
+        pats = frame.get("patterns", []) if frame else []
+        ft = analysis.get("file_type", "")
+
+        has_particles = frame.get("has_particles", False) if frame else False
+
+        # Particle/overlay content -> Background/Graphic Resources (8)
+        if has_particles:
+            return "8"
+
+        # Video animations -> Background/Graphic Resources (8)
+        if ft == "video":
+            return "8"
+
+        # Smooth abstract patterns -> Background/Graphic Resources (8)
+        if "smooth" in pats and "soft focus" in pats:
+            return "8"
+
+        # Detailed landscape-like photos -> Landscapes (11)
+        if "detailed" in pats or "vibrant" in pats:
+            return "11"
+
+        # Nature colors -> Nature (11) or Plants (14)
+        color_str = " ".join(colors).lower()
+        if any(w in color_str for w in ["green", "forest", "grass", "leaf"]):
+            return "11"
+        if any(w in color_str for w in ["pink", "rose", "blossom", "flower"]):
+            return "14"
+
+        return "8"

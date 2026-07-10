@@ -397,8 +397,8 @@ select { cursor: pointer; }
               </select>
             </div>
             <div class="setting-item"><label>Keywords</label><input type="number" id="fileKw" value="50" min="10" max="200"></div>
-            <div class="setting-item"><label>Titles</label><input type="number" id="fileTitle" value="3" min="1" max="10"></div>
-            <div class="setting-item"><label>Desc</label><input type="number" id="fileDesc" value="1" min="1" max="5"></div>
+            <div class="setting-item" style="display:none;"><label>Titles</label><input type="number" id="fileTitle" value="1" min="1" max="10"></div>
+            <div class="setting-item" style="display:none;"><label>Desc</label><input type="number" id="fileDesc" value="1" min="1" max="5"></div>
           </div>
           <button class="btn btn-primary btn-block" onclick="generateFromFile()" style="margin-top:10px;">&#9889; Generate &amp; Export All CSV</button>
         </div>
@@ -769,8 +769,17 @@ function generateDescriptions(word, keywords, count = 1) {
 }
 
 function guessCategory(word) {
-  const m = findMatches(word);
-  return m.length ? m[0].name.charAt(0).toUpperCase() + m[0].name.slice(1) : "Other";
+  const w = word.toLowerCase();
+  if (w.match(/bird|butterfly|animal|dog|cat|fish|wildlife|pet/)) return "1"; // Animals
+  if (w.match(/flower|petal|blossom|tree|leaf|grass|plant|sakura|rose/)) return "14"; // Plants and Flowers
+  if (w.match(/sky|star|space|cloud|landscape|mountain|nature|sunset|sunrise|sun|moon/)) return "11"; // Landscapes
+  if (w.match(/building|city|urban|street|architecture/)) return "2"; // Buildings
+  if (w.match(/business|office|work|meeting/)) return "3"; // Business
+  if (w.match(/food|drink|restaurant|meal/)) return "7"; // Food
+  if (w.match(/tech|computer|laptop|digital|cyber/)) return "19"; // Technology
+  
+  // Default to Graphic Resources for abstract, particles, hearts, etc.
+  return "8";
 }
 
 function shuffle(a) { const arr = [...a]; for (let i = arr.length-1; i > 0; i--) { const j = Math.floor(Math.random()*(i+1)); [arr[i],arr[j]] = [arr[j],arr[i]]; } return arr; }
@@ -1021,7 +1030,7 @@ function generateFromFile() {
           const dim = d.analysis.width ? `${d.analysis.width}x${d.analysis.height}` : '';
           const cols = d.analysis.dominantColors.map(c => c.name).join(', ');
           const row = buildPlatformRow(platform, {
-            filename: `${d.analysis.filename}_${i+1}${d.analysis.extension}`,
+            filename: `${d.analysis.filename}${d.analysis.extension}`,
             title: t, keywords: kwStr, description: desc, category: d.category,
             file_type: d.analysis.fileType, orientation: d.analysis.orientation,
             dimensions: dim, dominant_colors: cols
@@ -1036,63 +1045,112 @@ function generateFromFile() {
 }
 
 function getPlatformHeaders(platform) {
-  return ['filename','title','keywords','category'];
+  return ['Filename','Title','Keywords','Category'];
 }
 
 function buildPlatformRow(platform, r) {
-  return { filename: r.filename, title: r.title, keywords: r.keywords, category: r.category };
+  return { Filename: r.filename, Title: r.title, Keywords: r.keywords, Category: r.category };
 }
 
 function extractConcept(a) {
-  const sw = new Set(['img','image','photo','picture','dsc','dscn','pic','untitled','screenshot','export','render','new','copy','final','edit','backup']);
-  const words = a.filename.toLowerCase().replace(/[_-]/g,' ').trim().split(/\s+/).filter(w => w.length>2&&!sw.has(w));
-  if (words.length) return words.slice(0,3).join(' ');
-  const colors = a.dominantColors.slice(0,2).map(c=>c.name);
-  let base = colors.join(' and ') || a.fileType;
-  if (a.orientation !== 'unknown') base += ' ' + a.orientation;
-  if (a.brightness.includes('dark')) base = 'dark ' + base;
-  else if (a.brightness.includes('bright')) base = 'bright ' + base;
-  return base;
+  const colors = a.dominantColors.slice(0, 3).map(c => c.name);
+  const colStr = colors.join(' and ');
+
+  let concept = colStr || 'animated';
+  if (a.fileType === 'video') concept += ' video';
+  else if (a.fileType === 'photo') concept += ' scene';
+  else concept += ' visual';
+
+  if (a.orientation !== 'unknown' && a.fileType !== 'video') {
+    concept += ' ' + a.orientation;
+  }
+  return concept;
 }
 
 function generateFileTitles(concept, analysis, platform, count) {
-  const base = concept.toLowerCase();
-  const col = analysis.dominantColors.slice(0,2).map(c=>c.name).join(' and ');
+  const colors = analysis.dominantColors.slice(0, 3).map(c => c.name);
+  const isDark = analysis.brightness === 'dark' || analysis.brightness === 'very dark';
+  const isBright = analysis.brightness === 'bright' || analysis.brightness === 'very bright';
   const isVideo = analysis.fileType === 'video';
-  const depth = analysis.brightness === 'dark' ? ['deep','dark','moody'][Math.floor(Math.random()*3)] : ['light','soft','clear','airy'][Math.floor(Math.random()*4)];
-  const bg = col ? `a ${depth} ${col} background` : `a ${depth} background`;
+
+  const c1 = colors[0] || '';
+  const c2 = colors[1] || '';
+
+  function hasDarkword(s) {
+    return /dark|deep|black|night|midnight/i.test(s);
+  }
+  function hasLightword(s) {
+    return /light|bright|white|clear|pale|soft/i.test(s);
+  }
+
+  const depth = isDark ? 'dark' : isBright ? 'bright' : '';
+  const useDepth = depth && !hasDarkword(c1) && !hasDarkword(c2) && !hasLightword(c1) && !hasLightword(c2);
+
+  let bg;
+  if (c1 && c2) {
+    bg = (useDepth ? depth + ' ' : '') + c1 + ' and ' + c2 + ' background';
+  } else if (c1) {
+    bg = (useDepth ? depth + ' ' : '') + c1 + ' background';
+  } else {
+    bg = depth ? depth + ' background' : 'dark background';
+  }
+
+  const backdropWords = ['background', 'backdrop', 'atmosphere', 'scene', 'setting', 'space'];
+
   const t = [];
   if (isVideo) {
-    t.push(`Animated ${col ? col + ' ' : ''}${base} on ${bg}`);
-    t.push(`Animated ${col ? col + ' ' : ''}${base} floating and drifting on ${bg}`);
-    t.push(`Seamless loop of animated ${col ? col + ' ' : ''}${base} on ${bg}`);
-    t.push(`Animated overlay of ${col ? col + ' ' : ''}${base} on ${bg}`);
+    const patterns = [
+      { adj: 'Falling', subj: ['particles','elements','graphics','overlay'], tmpl: (a,s,b) => `${a} ${s} animation on a ${b}` },
+      { adj: 'Floating', subj: ['particles','elements','motion graphics','overlay'], tmpl: (a,s,b) => `${a} ${s} on a ${b}` },
+      { adj: 'Shimmering', subj: ['particles','elements','stars','sparkles'], tmpl: (a,s,b) => `${a} ${s} twinkling on a ${b}` },
+      { adj: 'Drifting', subj: ['particles','elements','motion graphics'], tmpl: (a,s,b) => `${a} ${s} across a ${b}` },
+      { adj: 'Glowing', subj: ['particles','elements','motion graphics'], tmpl: (a,s,b) => `${a} ${s} on a ${b}` },
+      { adj: 'Animated', subj: ['particles','motion graphics','overlay','visuals'], tmpl: (a,s,b) => `Seamless loop of animated ${s} on a ${b}` },
+    ];
+
+    for (const p of patterns) {
+      const s = p.subj[Math.floor(Math.random() * p.subj.length)];
+      t.push(p.tmpl(p.adj, s, bg));
+    }
   } else {
-    t.push(`Beautiful ${col ? col + ' ' : ''}${base} with natural lighting on ${bg}`);
-    t.push(`Stunning view of ${col ? col + ' ' : ''}${base} in a ${depth} atmosphere`);
-    t.push(`Serene ${col ? col + ' ' : ''}${base} landscape on ${bg}`);
+    const colPref = c1 ? c1 + ' ' : '';
+    t.push(`Beautiful ${colPref}scene with natural lighting on a ${bg}`);
+    t.push(`Stunning ${colPref}view captured on a ${bg}`);
+    t.push(`Serene ${colPref}landscape composition on a ${bg}`);
   }
   return shuffle(t).slice(0, count);
 }
 
 function generateFileDescriptions(concept, analysis, keywords, platform, count) {
-  const base = concept.charAt(0).toUpperCase() + concept.slice(1);
+  const ft = analysis.fileType === 'video' ? 'stock footage' : 'stock photo';
   const ks = keywords.slice(0,12).join(', ');
-  const d = [`Discover this stunning ${base} ${analysis.fileType}. Features ${ks}. Resolution: ${analysis.width||'high'}. Royalty-free license included.`,`Professional ${base} ${analysis.fileType} capturing ${ks}. Perfect for advertising, branding, and design. Resolution: ${analysis.width||'high'}.`,`Beautiful ${base} ${analysis.fileType} showcasing ${ks}. Perfect for personal and commercial projects. High quality.`];
+  const dim = analysis.width ? `${analysis.width}x${analysis.height}` : 'high resolution';
+  const d = [
+    `Discover this stunning stock ${ft}. Features ${ks}. Resolution: ${dim}. Royalty-free license included.`,
+    `Professional ${ft} capturing ${ks}. Perfect for advertising, branding, and design. Resolution: ${dim}.`,
+    `Beautiful ${ft} showcasing ${ks}. Perfect for personal and commercial projects. High quality.`
+  ];
   return shuffle(d).slice(0, count);
 }
 
 function exportFileCSV() {
-  if (!fileGeneratedData) { showToast('Generate first.', 'error'); return; }
-  const d = fileGeneratedData, kwStr = d.keywords.join(', ');
-  const headers = ['filename','title','keywords','description','category','platform','file_type','orientation','dimensions','dominant_colors'];
-  const rows = d.titles.map((t,i) => {
-    const desc = d.descriptions[i]||d.descriptions[0];
-    const dim = d.analysis.width ? `${d.analysis.width}x${d.analysis.height}` : '';
-    const cols = d.analysis.dominantColors.map(c=>c.name).join(', ');
-    return {filename: `${d.analysis.filename}_${i+1}${d.analysis.extension}`,title:t,keywords:kwStr,description:desc,category:d.category,platform:d.platform,file_type:d.analysis.fileType,orientation:d.analysis.orientation,dimensions:dim,dominant_colors:cols};
-  });
-  downloadCSV(headers, rows, `diasin_${d.analysis.filename}`);
+  if (!fileGeneratedDataArr || fileGeneratedDataArr.length === 0) { showToast('Generate first.', 'error'); return; }
+  const platform = document.getElementById('filePlatform').value;
+  const headers = getPlatformHeaders(platform);
+  const rows = [];
+  
+  for (const d of fileGeneratedDataArr) {
+    const kwStr = d.keywords.join(', ');
+    d.titles.forEach((t, i) => {
+      const row = buildPlatformRow(platform, {
+        filename: `${d.analysis.filename}${d.analysis.extension}`,
+        title: t, keywords: kwStr, category: d.category
+      });
+      rows.push(row);
+    });
+  }
+  
+  downloadCSV(headers, rows, `diasin_files_${new Date().toISOString().slice(0,19).replace(/[:-]/g,'')}`);
   showToast('CSV exported!', 'success');
 }
 
