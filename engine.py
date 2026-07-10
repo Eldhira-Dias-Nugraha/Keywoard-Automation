@@ -832,26 +832,16 @@ class KeywordEngine:
     def generate_csv_data(self, base_word, num_keywords=50, num_titles=3, num_desc=1):
         keywords = self.generate_keywords(base_word, max_keywords=num_keywords)
         titles = self.generate_titles(base_word, count=num_titles)
-        descriptions = self.generate_descriptions(base_word, keywords, count=num_desc)
+        kw_str = ", ".join(keywords)
 
         rows = []
-        for i in range(max(len(titles), len(descriptions), 1)):
-            title = titles[i] if i < len(titles) else titles[-1]
-            desc = descriptions[i] if i < len(descriptions) else descriptions[-1]
-            kw_str = ", ".join(keywords)
-            rows.append({
+        for i in range(len(titles)):
+            rows.append(self.get_platform_csv_row({
                 "filename": f"{base_word.lower().replace(' ', '_')}_{i+1}.jpg",
-                "title": title,
+                "title": titles[i],
                 "keywords": kw_str,
-                "description": desc,
-                "category": self._guess_category(base_word),
-                "platform": "Adobe Stock",
-                "file_type": "photo",
-                "orientation": "",
-                "dimensions": "",
-                "dominant_colors": ""
-            })
-
+                "category": self._guess_category(base_word)
+            }))
         return rows
 
     def analyze_file(self, filepath):
@@ -865,26 +855,16 @@ class KeywordEngine:
 
         keywords = self._generate_file_keywords(base_concept, analysis, max_kw)
         titles = self._generate_file_titles(base_concept, analysis, platform, num_titles)
-        descriptions = self._generate_file_descriptions(base_concept, analysis, keywords, platform, num_desc)
+        kw_str = ", ".join(keywords)
 
         rows = []
-        for i in range(max(len(titles), len(descriptions), 1)):
-            title = titles[i] if i < len(titles) else titles[-1]
-            desc = descriptions[i] if i < len(descriptions) else descriptions[-1]
-            kw_str = ", ".join(keywords)
-            ext = analysis["extension"]
-            rows.append({
-                "filename": f"{analysis['filename']}_{i+1}{ext}",
-                "title": title[:platform_config.get("title_max_length", 200)],
+        for i in range(len(titles)):
+            rows.append(self.get_platform_csv_row({
+                "filename": f"{analysis['filename']}_{i+1}{analysis['extension']}",
+                "title": titles[i][:platform_config.get("title_max_length", 200)],
                 "keywords": kw_str,
-                "description": desc[:platform_config.get("desc_max_length", 2000)],
-                "category": self._guess_category(base_concept),
-                "platform": platform,
-                "file_type": analysis["file_type"],
-                "orientation": analysis["orientation"],
-                "dimensions": f"{analysis['width']}x{analysis['height']}" if analysis["width"] else "",
-                "dominant_colors": ", ".join(c["name"] for c in analysis["dominant_colors"][:3])
-            })
+                "category": self._guess_category(base_concept)
+            }))
         return rows, analysis
 
     def _extract_concept_from_analysis(self, analysis):
@@ -1073,45 +1053,15 @@ class KeywordEngine:
         return random.sample(templates, min(count, len(templates)))
 
     def get_platform_csv_headers(self, platform="Adobe Stock"):
-        if platform == "Adobe Stock":
-            return ["filename", "title", "keywords", "description", "category",
-                    "editorial", "region", "model_release", "property_release",
-                    "file_type", "orientation", "dimensions", "dominant_colors"]
-        else:
-            return ["filename", "title", "keywords", "description", "category",
-                    "editorial_status", "file_type", "orientation",
-                    "dimensions", "dominant_colors"]
+        return ["filename", "title", "keywords", "category"]
 
     def get_platform_csv_row(self, row_data, platform="Adobe Stock"):
-        if platform == "Adobe Stock":
-            return {
-                "filename": row_data.get("filename", ""),
-                "title": row_data.get("title", ""),
-                "keywords": row_data.get("keywords", ""),
-                "description": row_data.get("description", ""),
-                "category": row_data.get("category", ""),
-                "editorial": "no",
-                "region": "all",
-                "model_release": "no",
-                "property_release": "no",
-                "file_type": row_data.get("file_type", "photo"),
-                "orientation": row_data.get("orientation", ""),
-                "dimensions": row_data.get("dimensions", ""),
-                "dominant_colors": row_data.get("dominant_colors", "")
-            }
-        else:
-            return {
-                "filename": row_data.get("filename", ""),
-                "title": row_data.get("title", ""),
-                "keywords": row_data.get("keywords", ""),
-                "description": row_data.get("description", ""),
-                "category": row_data.get("category", ""),
-                "editorial_status": "Not Editorial",
-                "file_type": row_data.get("file_type", "photo"),
-                "orientation": row_data.get("orientation", ""),
-                "dimensions": row_data.get("dimensions", ""),
-                "dominant_colors": row_data.get("dominant_colors", "")
-            }
+        return {
+            "filename": row_data.get("filename", ""),
+            "title": row_data.get("title", ""),
+            "keywords": row_data.get("keywords", ""),
+            "category": row_data.get("category", "1")
+        }
 
     def move_file_with_rename(self, source_path, dest_dir, new_name=None):
         src = Path(source_path)

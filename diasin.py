@@ -413,9 +413,8 @@ class DiasinApp:
         for i, row in enumerate(data):
             self.td_text.insert(tk.END, f"{'='*40}\n  SET {i+1}\n{'='*40}\n")
             self.td_text.insert(tk.END, f"  File: {row['filename']}\n")
-            self.td_text.insert(tk.END, f"  [{row.get('platform','')}]  [{row['category']}]\n\n")
+            self.td_text.insert(tk.END, f"  [{row['category']}]\n\n")
             self.td_text.insert(tk.END, f"  Title:\n  {row['title']}\n\n")
-            self.td_text.insert(tk.END, f"  Description:\n  {row['description'][:200]}...\n\n")
 
     # ==================== MOVE / COPY ====================
     def _set_destination(self):

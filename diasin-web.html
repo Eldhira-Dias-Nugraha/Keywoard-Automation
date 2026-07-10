@@ -1036,21 +1036,11 @@ function generateFromFile() {
 }
 
 function getPlatformHeaders(platform) {
-  if (platform === 'Adobe Stock') {
-    return ['filename','title','keywords','description','category','editorial','region','model_release','property_release','file_type','orientation','dimensions','dominant_colors'];
-  }
-  return ['filename','title','keywords','description','category','editorial_status','file_type','orientation','dimensions','dominant_colors'];
+  return ['filename','title','keywords','category'];
 }
 
 function buildPlatformRow(platform, r) {
-  if (platform === 'Adobe Stock') {
-    return { filename: r.filename, title: r.title, keywords: r.keywords, description: r.description,
-      category: r.category, editorial: 'no', region: 'all', model_release: 'no', property_release: 'no',
-      file_type: r.file_type, orientation: r.orientation, dimensions: r.dimensions, dominant_colors: r.dominant_colors };
-  }
-  return { filename: r.filename, title: r.title, keywords: r.keywords, description: r.description,
-    category: r.category, editorial_status: 'Not Editorial',
-    file_type: r.file_type, orientation: r.orientation, dimensions: r.dimensions, dominant_colors: r.dominant_colors };
+  return { filename: r.filename, title: r.title, keywords: r.keywords, category: r.category };
 }
 
 function extractConcept(a) {
