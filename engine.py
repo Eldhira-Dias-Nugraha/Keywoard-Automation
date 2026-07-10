@@ -764,28 +764,16 @@ class KeywordEngine:
         ]
 
     def generate_titles(self, base_word, count=5):
-        base = base_word.title()
+        base = base_word.lower()
         templates = [
-            f"Beautiful {base} Stock Photo for Creative Projects",
-            f"Stunning {base} Photography | High Quality Image",
-            f"Professional {base} Image for Commercial Use",
-            f"Amazing {base} - Royalty Free Stock Photography",
-            f"Creative {base} | Perfect for Design Projects",
-            f"Elegant {base} Photography Collection",
-            f"Modern {base} Stock Image for Your Projects",
-            f"Inspiring {base} - Premium Stock Photo",
-            f"Vibrant {base} Stock Photography",
-            f"Unique {base} Image for Creative Design",
-            f"Premium {base} Photography for Commercial Projects",
-            f"Artistic {base} - High Resolution Stock Image",
-            f"Beautiful {base} Background for Design",
-            f"Professional {base} Photo for Business Projects",
-            f"Creative {base} - Royalty Free Image",
-            f"Stunning View of {base} | Stock Photography",
-            f"Natural {base} Photography Collection",
-            f"Modern {base} Design Concept Image",
-            f"Original {base} Stock Photograph",
-            f"Exclusive {base} Image for Creative Professionals"
+            f"Beautiful {base} scenery with soft natural light",
+            f"Serene {base} landscape with calm atmosphere",
+            f"Scenic view of {base} in golden hour lighting",
+            f"Peaceful {base} scene with gentle breeze",
+            f"Stunning {base} landscape in vivid colors",
+            f"Quiet {base} morning with soft clouds",
+            f"Wide panoramic view of {base} landscape",
+            f"Natural {base} scenery with fresh green tones",
         ]
         selected = random.sample(templates, min(count, len(templates)))
         return selected
@@ -983,33 +971,57 @@ class KeywordEngine:
         return result
 
     def _generate_file_titles(self, base_concept, analysis, platform, count=3):
-        base = base_concept.title() if base_concept else "Stock Image"
-        ft = analysis["file_type"].title() if analysis["file_type"] != "unknown" else "Image"
-        col = ", ".join(c["name"] for c in analysis["dominant_colors"][:3])
-        orient = analysis["orientation"].title() if analysis["orientation"] != "unknown" else ""
-        bright = analysis["brightness"].title() if analysis["brightness"] != "unknown" else ""
+        base = base_concept.lower().strip() if base_concept else "abstract"
+        col_names = [c["name"] for c in analysis["dominant_colors"][:3]]
+        col = " and ".join(col_names) if col_names else ""
+        bright = analysis["brightness"] if analysis["brightness"] != "unknown" else ""
+        is_video = analysis["file_type"] == "video"
 
-        templates = [
-            f"{base} Stock {ft} for Creative Projects",
-            f"Beautiful {base} Stock {ft} | High Quality",
-            f"Professional {base} {ft} for Commercial Use",
-            f"Amazing {base} - Royalty Free Stock {ft}",
-            f"Creative {base} | Perfect for Design Projects",
-            f"Elegant {base} Stock {ft} Collection",
-            f"Modern {base} Stock {ft} for Your Projects",
-            f"Inspiring {base} - Premium Stock {ft}",
-        ]
+        # Build scene description from colors + brightness
+        if bright == "dark" or bright == "very dark":
+            depth = random.choice(["deep", "dark", "moody", "atmospheric"])
+        elif bright == "bright" or bright == "very bright":
+            depth = random.choice(["light", "bright", "airy", "clear", "soft"])
+        else:
+            depth = random.choice(["soft", "vibrant", "smooth", "natural", "minimal"])
 
+        # Scene backdrop constructions
         if col:
-            templates.append(f"Stunning {col} {base} Stock {ft}")
-            templates.append(f"Beautiful {col} {base} Photography")
-        if orient:
-            templates.append(f"{orient} {base} Stock {ft} for Design")
-        if bright:
-            templates.append(f"{bright} {base} Stock {ft} Image")
+            bg = random.choice([
+                f"a {depth} {col} background",
+                f"a {col} {depth} backdrop",
+                f"a {depth} {col} sky",
+                f"a {col} {depth} atmosphere",
+            ])
+            scene_in = random.choice([
+                f"in a {depth} {col} atmosphere",
+                f"against a {col} {depth} backdrop",
+                f"across a {depth} {col} background",
+                f"in a {col} {depth} setting",
+            ])
+            col_prefix = col.title() + " "
+        else:
+            bg = f"a {depth} background"
+            scene_in = f"in a {depth} atmosphere"
+            col_prefix = ""
 
-        if platform == "Shutterstock":
-            templates = [t.replace("Stock", "Shutterstock") for t in templates]
+        templates = []
+
+        if is_video:
+            # Pattern: "Animated [adj] [subject] [verb-ing] on [scene]"
+            templates.append(f"Animated {col_prefix}{base} on {bg}")
+            templates.append(f"Animated {col_prefix}{base} floating and drifting on {bg}")
+            templates.append(f"Seamless loop of animated {col_prefix}{base} on {bg}")
+            templates.append(f"Motion sequence of {col_prefix}{base} {scene_in}")
+            templates.append(f"Animated overlay of {col_prefix}{base} on {bg}")
+
+        else:
+            templates.append(f"Beautiful {col_prefix}{base} with natural lighting on {bg}")
+            templates.append(f"Stunning view of {col_prefix}{base} {scene_in}")
+            templates.append(f"{col_prefix}{base.title()} captured in {depth} natural light on {bg}")
+            templates.append(f"Serene {col_prefix}{base} landscape on {bg}")
+            if analysis["orientation"] == "landscape":
+                templates.append(f"Wide angle view of {col_prefix}{base} across {bg}")
 
         return random.sample(templates, min(count, len(templates)))
 

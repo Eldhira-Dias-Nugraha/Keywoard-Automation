@@ -756,8 +756,8 @@ function generateKeywords(word, maxKeywords = 50) {
 }
 
 function generateTitles(word, count = 3) {
-  const base = word.charAt(0).toUpperCase() + word.slice(1);
-  const t = [`Beautiful ${base} Stock Photo for Creative Projects`,`Stunning ${base} Photography - High Quality Image`,`Professional ${base} Image for Commercial Use`,`Amazing ${base} - Royalty Free Stock Photography`,`Creative ${base} | Perfect for Design Projects`,`Elegant ${base} Photography Collection`,`Modern ${base} Stock Image for Your Projects`,`Inspiring ${base} - Premium Stock Photo`,`Vibrant ${base} Stock Photography`,`Unique ${base} Image for Creative Design`,`Premium ${base} Photography for Commercial Projects`,`Artistic ${base} - High Resolution Stock Image`,`Beautiful ${base} Background for Design`,`Professional ${base} Photo for Business Projects`,`Creative ${base} - Royalty Free Image`,`Stunning View of ${base} | Stock Photography`,`Natural ${base} Photography Collection`,`Modern ${base} Design Concept Image`,`Original ${base} Stock Photograph`,`Exclusive ${base} Image for Creative Professionals`];
+  const base = word.toLowerCase();
+  const t = [`Beautiful ${base} scenery with soft natural light`,`Serene ${base} landscape with calm atmosphere`,`Scenic view of ${base} in golden hour lighting`,`Peaceful ${base} scene with gentle breeze`,`Stunning ${base} landscape in vivid colors`,`Wide panoramic view of ${base} landscape`,`Natural ${base} scenery with fresh green tones`];
   return shuffle(t).slice(0, count);
 }
 
@@ -1056,12 +1056,22 @@ function extractConcept(a) {
 }
 
 function generateFileTitles(concept, analysis, platform, count) {
-  const base = concept.charAt(0).toUpperCase() + concept.slice(1);
-  const ft = analysis.fileType.charAt(0).toUpperCase() + analysis.fileType.slice(1);
-  const col = analysis.dominantColors.slice(0,2).map(c=>c.name).join(', ');
-  const t = [`${base} Stock ${ft} for Creative Projects`,`Beautiful ${base} Stock ${ft} | High Quality`,`Professional ${base} ${ft} for Commercial Use`,`Creative ${base} - Royalty Free Stock ${ft}`,`Modern ${base} Stock ${ft} for Your Projects`,`Inspiring ${base} - Premium Stock ${ft}`];
-  if (col) t.push(`Stunning ${col} ${base} Stock ${ft}`);
-  if (analysis.orientation !== 'unknown') t.push(`${analysis.orientation.charAt(0).toUpperCase()+analysis.orientation.slice(1)} ${base} Stock ${ft}`);
+  const base = concept.toLowerCase();
+  const col = analysis.dominantColors.slice(0,2).map(c=>c.name).join(' and ');
+  const isVideo = analysis.fileType === 'video';
+  const depth = analysis.brightness === 'dark' ? ['deep','dark','moody'][Math.floor(Math.random()*3)] : ['light','soft','clear','airy'][Math.floor(Math.random()*4)];
+  const bg = col ? `a ${depth} ${col} background` : `a ${depth} background`;
+  const t = [];
+  if (isVideo) {
+    t.push(`Animated ${col ? col + ' ' : ''}${base} on ${bg}`);
+    t.push(`Animated ${col ? col + ' ' : ''}${base} floating and drifting on ${bg}`);
+    t.push(`Seamless loop of animated ${col ? col + ' ' : ''}${base} on ${bg}`);
+    t.push(`Animated overlay of ${col ? col + ' ' : ''}${base} on ${bg}`);
+  } else {
+    t.push(`Beautiful ${col ? col + ' ' : ''}${base} with natural lighting on ${bg}`);
+    t.push(`Stunning view of ${col ? col + ' ' : ''}${base} in a ${depth} atmosphere`);
+    t.push(`Serene ${col ? col + ' ' : ''}${base} landscape on ${bg}`);
+  }
   return shuffle(t).slice(0, count);
 }
 
