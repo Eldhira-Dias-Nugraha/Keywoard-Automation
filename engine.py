@@ -1047,119 +1047,165 @@ class KeywordEngine:
                 keywords.append(w)
                 used.add(w)
 
-        colors = [c["name"] for c in analysis["dominant_colors"][:3]]
+        C = [c["name"] for c in analysis["dominant_colors"][:3]]
         is_dark = analysis["brightness"] in ["dark", "very dark"]
         is_bright = analysis["brightness"] in ["bright", "very bright"]
         is_video = analysis["file_type"] == "video"
         vis = analysis.get("visual") or {}
         frame = vis.get("frame") if is_video else vis
+        has_p = frame.get("has_particles", False) if frame else False
+        pats = frame.get("patterns", []) if frame else []
+        ml = vis.get("motion_level", "low") if is_video else "low"
 
-        # 1. Type & format
+        # --- Content-type foundation ---
         if is_video:
-            push("video"), push("footage"), push("stock video")
-            push("motion graphic"), push("animation"), push("loop")
-            push("overlay"), push("hd video")
+            push("video"); push("footage"); push("stock video")
+            push("motion graphic"); push("animation"); push("loop")
+            push("overlay"); push("hd video")
             if analysis.get("width", 0) >= 3840:
-                push("4k"), push("ultra hd")
+                push("4k"); push("ultra hd")
         else:
-            push("photo"), push("photograph"), push("stock photo")
+            push("photo"); push("photograph"); push("stock photo")
             push("high resolution")
 
-        # 2. Colors
-        for c in colors:
-            push(c)
-            push(f"{c} color")
-        if is_dark:
-            push("dark")
-        elif is_bright:
-            push("bright")
+        # --- Colors ---
+        for c in C:
+            push(c); push(f"{c} color")
 
-        # 3. Visual patterns from analysis
+        # --- Style / mood from analysis ---
+        if ml == "high":
+            push("dynamic"); push("flowing"); push("motion")
+        elif ml == "medium":
+            push("drifting"); push("floating")
+        if is_video:
+            push("seamless loop"); push("motion sequence")
+        if "smooth" in pats:
+            push("smooth"); push("soft"); push("gradient")
+            push("geometric"); push("minimal"); push("modern")
+            push("elegant")
+        if is_dark:
+            push("dark"); push("night"); push("shadow")
+            push("moody"); push("mysterious"); push("dramatic")
+        elif is_bright:
+            push("bright"); push("light"); push("airy"); push("clear")
         if frame:
-            pats = frame.get("patterns", [])
-            if "many particles" in pats or "few particles" in pats:
-                push("particle"), push("particles")
-                push("scattered"), push("floating")
-            if "smooth" in pats:
-                push("smooth"), push("soft"), push("gentle")
-            if "vibrant" in pats:
-                push("vibrant"), push("colorful")
-            if "sharp" in pats:
-                push("sharp"), push("crisp")
-            if frame.get("has_particles"):
-                push("particle effect"), push("particle animation")
             if frame.get("contrast") == "high":
-                push("high contrast"), push("dramatic")
+                push("high contrast"); push("bold")
             elif frame.get("contrast") == "low":
-                push("soft contrast"), push("subtle")
+                push("soft"); push("subtle")
             if frame.get("edge_density") == "low":
-                push("minimalist")
+                push("minimal"); push("modern")
             elif frame.get("edge_density") == "high":
-                push("detailed"), push("intricate")
+                push("detailed"); push("intricate")
 
-        # 4. Motion (video)
-        if is_video:
-            ml = vis.get("motion_level", "low")
-            if ml == "high":
-                push("dynamic"), push("energetic"), push("flowing")
-            elif ml == "medium":
-                push("gentle motion"), push("floating")
-            push("seamless loop"), push("motion sequence")
-            push("falling"), push("drifting")
+        # --- Curated groups (each keyword belongs to one content category) ---
+        GROUPS = {
+            "abstract": ["abstract", "background", "texture", "pattern", "wallpaper",
+                         "backdrop", "gradient", "overlay", "effect", "transition",
+                         "design", "graphic", "element", "shape", "curve", "organic",
+                         "geometric", "minimal", "modern", "elegant", "creative",
+                         "luxury", "frame", "border", "template", "mockup",
+                         "collection", "bundle", "asset"],
+            "particle": ["particle", "light", "glow", "flare", "sparkle", "twinkle",
+                         "beam", "ray", "reflection", "shadow", "bokeh",
+                         "dust", "smoke", "fog", "cloud", "bubble",
+                         "star", "galaxy", "space", "universe",
+                         "silhouette", "outline"],
+            "smooth": ["gradient", "geometric", "minimal", "modern",
+                       "elegant", "luxury", "line", "wave", "curve",
+                       "organic", "shape", "circle", "square", "triangle"],
+            "dark": ["night", "shadow", "moody", "mysterious", "dramatic",
+                     "smoke", "fog", "dust", "silhouette", "moon",
+                     "star", "galaxy", "space", "universe"],
+            "transparent": ["transparent", "isolated", "png", "svg", "eps",
+                            "icon", "symbol", "sticker", "label", "badge",
+                            "clipart", "illustration", "vector",
+                            "editable", "printable", "cut out"],
+            "vibrant": ["colorful", "creative", "pop art", "retro", "vintage",
+                        "comic", "cartoon", "halftone", "speech bubble",
+                        "thought bubble", "dialogue", "caption", "panel",
+                        "explosion", "boom", "bang", "pow", "zap",
+                        "action", "superhero", "manga", "anime",
+                        "brush", "paint", "ink", "sketch", "drawing",
+                        "watercolor", "paper cut", "paper"],
+            "nature": ["nature", "sky", "sun", "moon", "star", "landscape",
+                       "forest", "tree", "leaf", "flower", "grass",
+                       "mountain", "river", "ocean", "beach",
+                       "animal", "bird", "cat", "dog", "fish",
+                       "butterfly", "wildlife",
+                       "travel", "summer", "winter", "spring", "autumn",
+                       "cloud", "water", "splash", "fire", "flame"],
+            "lifestyle": ["business", "office", "finance", "marketing", "branding",
+                          "startup", "success", "strategy", "technology",
+                          "digital", "ai", "robot", "cyber", "network",
+                          "database", "security", "coding", "programming",
+                          "software", "website", "mobile", "application",
+                          "dashboard", "ui", "ux", "interface",
+                          "infographic", "presentation",
+                          "education", "school", "learning",
+                          "medical", "health", "hospital", "science", "laboratory",
+                          "food", "fruit", "vegetable", "coffee", "tea",
+                          "dessert", "cake", "pizza", "burger", "fresh",
+                          "festival", "holiday", "christmas", "new year",
+                          "birthday", "love", "heart", "wedding", "celebration", "gift",
+                          "poster", "flyer", "brochure", "banner",
+                          "illustration", "vector", "icon", "symbol"],
+            "video": ["cinematic", "footage", "motion", "animation", "loop"],
+        }
 
-        # 5. Atmosphere from brightness
+        active_groups = set()
+        if has_p or "particle" in str(pats):
+            active_groups.add("particle")
+            active_groups.add("abstract")
+        elif "smooth" in pats:
+            active_groups.add("smooth")
+            active_groups.add("abstract")
+        if "vibrant" in pats and not has_p:
+            active_groups.add("vibrant")
         if is_dark:
-            push("dark"), push("atmospheric"), push("moody")
-            push("night"), push("dramatic"), push("mysterious")
-        elif is_bright:
-            push("bright"), push("airy"), push("clear"), push("light")
-        else:
-            push("natural"), push("soft")
-
-        # 6. Abstract & stock context
-        push("abstract"), push("background")
-        push("graphic"), push("design"), push("element")
-        push("visual"), push("texture"), push("pattern")
-        if is_video:
-            push("animated background"), push("motion background")
-            push("stock footage"), push("video loop")
-
-        # 7. Orientation
-        ori = analysis.get("orientation", "")
-        if ori == "landscape":
-            push("landscape"), push("horizontal"), push("wide")
-        elif ori == "portrait":
-            push("portrait"), push("vertical"), push("tall")
-
-        # 8. Transparency
+            active_groups.add("dark")
+            active_groups.add("abstract")
+        if is_bright:
+            active_groups.add("abstract")
         if analysis.get("has_transparency"):
-            push("transparent background"), push("transparency")
-            push("isolated"), push("cut out"), push("alpha channel")
+            active_groups.add("transparent")
+        if is_video:
+            active_groups.add("video")
 
-        # 9. Resolution
-        w = analysis.get("width", 0)
-        h = analysis.get("height", 0)
-        if w and h:
-            push(f"{w}x{h}")
-            if w >= 3840:
-                push("ultra hd"), push("4k resolution")
-            elif w >= 1920:
-                push("full hd"), push("hd resolution")
-            elif w >= 1280:
-                push("hd ready")
+        seen_from_curated = set()
+        for group_name in active_groups:
+            for kw in GROUPS.get(group_name, []):
+                w = kw.lower().strip()
+                if w not in seen_from_curated:
+                    push(kw)
+                    seen_from_curated.add(w)
 
-        # 10. Words from generated titles (if provided)
+        # --- Title words (only meaningful phrases, not fragments) ---
         if titles:
+            skip_words = {"with", "that", "this", "from", "across", "wide",
+                          "angle", "view", "scene", "beautiful", "natural",
+                          "lighting", "detail", "background", "loop", "animation",
+                          "animated", "overlay", "seamless", "particle", "particles",
+                          "floating", "drifting", "falling", "glowing", "motion",
+                          "graphics", "visuals", "gentle", "sequence", "elements",
+                          "serene", "landscape", "soft", "dark", "black", "color"}
             for t in titles:
                 for w in t.lower().split():
                     w = w.strip(",.;:!?").strip()
-                    if len(w) > 3 and w not in ["with", "that", "this", "from", "across", "loop"]:
+                    if len(w) > 4 and w not in skip_words:
                         push(w)
 
-        # 11. Stock suffixes (limit to keep room)
-        for s in ["royalty free", "stock image", "stock photography",
-                   "commercial use", "creative project", "download"]:
-            push(s)
+        # --- Technical ---
+        ori = analysis.get("orientation", "")
+        if ori == "landscape":
+            push("landscape"); push("horizontal")
+        elif ori == "portrait":
+            push("portrait"); push("vertical")
+        w = analysis.get("width", 0); h = analysis.get("height", 0)
+        if w and h:
+            if w >= 3840: push("ultra hd"); push("4k resolution")
+            elif w >= 1920: push("full hd"); push("hd resolution")
+            elif w >= 1280: push("hd ready")
 
         return keywords[:max_keywords]
 
