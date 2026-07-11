@@ -370,31 +370,45 @@ class DiasinApp:
 
     # ==================== PROCESS ====================
     def _process_selected(self):
+        if getattr(self, '_processing', False):
+            self._status("Already processing...", THEME["warning"])
+            return
         if not self.selected_indices:
             messagebox.showwarning("", "Pilih file dulu (centang).")
             return
+
+        indices = list(self.selected_indices)
+        plat = self.platform_var.get()
+        self._processing = True
+        self._processing_results = {}
+        self._processing_queue = indices.copy()
+        self._status(f"Processing {len(indices)} files...", THEME["warning"])
         self._show_progress(True)
-        self.window.update()
-        try:
-            plat = self.platform_var.get()
-            for idx in list(self.selected_indices):
+
+        def worker():
+            for idx in indices:
                 f = self.files_list[idx]
                 try:
                     data, analysis = self.engine.generate_from_file(
                         f["path"], platform=plat, num_keywords=50, num_titles=3, num_desc=1)
-                    self.generated_data_map[f["stem"]] = {"data": data, "analysis": analysis}
+                    self._processing_results[f["stem"]] = {"data": data, "analysis": analysis}
                 except Exception as e:
                     print(f"Skip {f['name']}: {e}")
+            self.window.after(0, self._on_processing_done)
 
-            self._refresh_list()
-            if self.selected_indices:
-                first_idx = min(self.selected_indices)
-                self._preview_file(first_idx)
-            self._status(f"Processed {len(self.generated_data_map)} files.", THEME["accent"])
-        except Exception as e:
-            self._status(f"Error: {str(e)}", THEME["danger"])
-        finally:
-            self._show_progress(False)
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_processing_done(self):
+        self.generated_data_map.update(self._processing_results)
+        self._processing = False
+        self._processing_results = {}
+        self._processing_queue = []
+        self._refresh_list()
+        if self.selected_indices:
+            first_idx = min(self.selected_indices)
+            self._preview_file(first_idx)
+        self._status(f"Processed {len(self.generated_data_map)} files.", THEME["accent"])
+        self._show_progress(False)
 
     def _display_generated(self, stem):
         if stem not in self.generated_data_map:
