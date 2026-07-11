@@ -732,7 +732,6 @@ function generateKeywords(word, maxKeywords = 50) {
   word = word.toLowerCase().trim();
   const keywords = [word], used = new Set([word]);
   const matches = findMatches(word);
-  const stock = ["stock photo","stock image","stock photography","royalty free","high resolution","photo","image","picture","photograph","stock illustration","stock vector","hd wallpaper","visual","graphic"];
 
   const push = (...items) => {
     for (const item of items) {
@@ -749,9 +748,74 @@ function generateKeywords(word, maxKeywords = 50) {
     if (data.times) push(...data.times);
     for (const items of Object.values(data.subjects)) push(...items);
   }
-  const suf = ["photography","background","wallpaper","design","concept","art","beautiful","amazing","creative","modern","abstract","digital","professional","unique","artistic","colorful","elegant","minimalist","inspiring","stunning"];
-  for (const s of suf) push(`${word} ${s}`);
-  push(...stock);
+
+  const CAT_KW_MAP = {
+    nature: ["abstract", "background", "texture", "pattern", "wallpaper",
+             "backdrop", "gradient", "geometric", "minimal", "modern",
+             "elegant", "creative", "design", "graphic",
+             "shape", "line", "wave", "curve", "organic",
+             "silhouette", "light", "glow", "shadow",
+             "sky", "sun", "moon", "star", "galaxy", "space",
+             "nature", "forest", "tree", "leaf", "flower", "grass",
+             "mountain", "river", "ocean", "beach", "landscape",
+             "animal", "bird", "butterfly", "wildlife",
+             "cloud", "water", "fire",
+             "travel", "summer", "winter", "spring", "autumn"],
+    urban: ["abstract", "background", "texture", "pattern", "wallpaper",
+            "backdrop", "geometric", "minimal", "modern",
+            "elegant", "creative", "design", "graphic",
+            "light", "glow", "flare", "shadow", "bokeh",
+            "line", "shape", "frame", "border",
+            "business", "technology", "digital",
+            "travel", "summer", "winter"],
+    teknologi: ["abstract", "background", "texture", "pattern",
+                "geometric", "minimal", "modern",
+                "creative", "design", "graphic",
+                "light", "glow", "flare", "shadow",
+                "shape", "line", "circle", "square", "triangle",
+                "digital", "ai", "robot", "cyber", "network",
+                "technology", "software", "website", "mobile",
+                "dashboard", "ui", "ux", "interface",
+                "infographic", "presentation",
+                "education", "learning",
+                "science", "laboratory"],
+    bisnis: ["background", "pattern", "geometric", "minimal", "modern",
+             "elegant", "creative", "design", "graphic",
+             "shape", "line", "frame", "border",
+             "business", "office", "finance", "marketing", "branding",
+             "startup", "success", "strategy", "technology",
+             "digital", "network", "software", "website", "mobile",
+             "dashboard", "ui", "ux", "interface",
+             "infographic", "presentation",
+             "education", "school", "learning",
+             "poster", "flyer", "banner", "brochure",
+             "icon", "symbol"],
+    kesehatan: ["background", "pattern", "minimal", "modern",
+                "creative", "design", "graphic",
+                "shape", "line", "circle",
+                "medical", "health", "hospital", "science", "laboratory",
+                "education", "school", "learning",
+                "poster", "flyer", "banner",
+                "icon", "symbol", "sticker", "label", "badge"],
+    makanan: ["background", "texture", "pattern", "minimal", "modern",
+              "creative", "design", "graphic",
+              "food", "fruit", "vegetable", "coffee", "tea",
+              "dessert", "cake", "pizza", "burger", "fresh",
+              "poster", "flyer", "banner",
+              "icon", "symbol", "sticker", "label"],
+  };
+
+  const usedCats = new Set();
+  for (const {catName} of matches) usedCats.add(catName);
+
+  const seen = new Set();
+  for (const cat of usedCats) {
+    const kws = CAT_KW_MAP[cat] || [];
+    for (const kw of kws) {
+      if (!seen.has(kw)) { push(kw); seen.add(kw); }
+    }
+  }
+
   return keywords.slice(0, maxKeywords);
 }
 
@@ -995,7 +1059,7 @@ function generateFromFile() {
       for (let fi = 0; fi < uploadedFiles.length; fi++) {
         const analysis = fileAnalyses[fi];
         const concept = extractConcept(analysis);
-        const keywords = generateKeywords(concept, kwCount);
+        const keywords = generateFileKeywords(analysis, kwCount);
         const titles = generateFileTitles(concept, analysis, platform, titleCount);
         const descriptions = generateFileDescriptions(concept, analysis, keywords, platform, descCount);
         const category = guessCategory(concept);
@@ -1053,18 +1117,47 @@ function buildPlatformRow(platform, r) {
 }
 
 function extractConcept(a) {
-  const colors = a.dominantColors.slice(0, 3).map(c => c.name);
-  const colStr = colors.join(' and ');
+  const colors = a.dominantColors.slice(0, 2).map(c => c.name);
+  if (colors.length) return colors[0];
+  return 'abstract';
+}
 
-  let concept = colStr || 'animated';
-  if (a.fileType === 'video') concept += ' video';
-  else if (a.fileType === 'photo') concept += ' scene';
-  else concept += ' visual';
+function generateFileKeywords(analysis, maxKeywords) {
+  const keywords = [], used = new Set();
+  const push = (...items) => {
+    for (const item of items) {
+      const k = item.toLowerCase().trim();
+      if (!used.has(k)) { keywords.push(k); used.add(k); }
+    }
+  };
 
-  if (a.orientation !== 'unknown' && a.fileType !== 'video') {
-    concept += ' ' + a.orientation;
+  const C = analysis.dominantColors.slice(0, 3).map(c => c.name);
+  const isDark = analysis.brightness === 'dark' || analysis.brightness === 'very dark';
+  const isVideo = analysis.fileType === 'video';
+  const vis = analysis.visual || {};
+  const frame = isVideo ? (vis.frame || vis) : vis;
+  const hasP = frame.has_particles || false;
+  const pats = frame.patterns || [];
+
+  push(isVideo ? 'video' : 'photo');
+  for (const c of C) push(c);
+
+  if (hasP) {
+    push('particle', 'light', 'glow', 'flare', 'sparkle', 'bokeh', 'dust');
+    push('abstract', 'background', 'texture', 'pattern', 'wallpaper', 'backdrop', 'gradient', 'overlay');
+    push('design', 'graphic', 'element', 'shape', 'geometric', 'minimal', 'modern', 'elegant', 'creative');
   }
-  return concept;
+  if (pats.includes('smooth') && !hasP) {
+    push('gradient', 'geometric', 'minimal', 'modern', 'elegant');
+    push('abstract', 'background', 'texture', 'pattern', 'wallpaper', 'backdrop');
+    push('design', 'graphic', 'element', 'shape', 'line', 'wave', 'curve');
+  }
+  if (isDark) {
+    push('night', 'shadow', 'moody', 'mysterious', 'dramatic', 'smoke', 'fog', 'dust');
+    push('moon', 'star', 'galaxy', 'space');
+  }
+
+  return keywords.slice(0, maxKeywords);
 }
 
 function generateFileTitles(concept, analysis, platform, count) {
