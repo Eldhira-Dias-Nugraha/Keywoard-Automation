@@ -36,7 +36,7 @@ class DiasinApp:
         self.engine = KeywordEngine()
         self.window = tb.Window(themename="darkly")
         self.window.title("Diasin - File Manager & Auto Keyword Generator")
-        self.window.geometry("1400@0")
+        self.window.geometry("1400x800")
         self.window.minsize(1200, 800)
         self.window.configure(bg=THEME["bg"])
 
