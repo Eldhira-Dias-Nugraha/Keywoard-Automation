@@ -1131,31 +1131,68 @@ function generateFileKeywords(analysis, maxKeywords) {
     }
   };
 
-  const C = analysis.dominantColors.slice(0, 3).map(c => c.name);
+  const C = (analysis.dominantColors || []).slice(0, 3).map(c => c.name);
   const isDark = analysis.brightness === 'dark' || analysis.brightness === 'very dark';
+  const isBright = analysis.brightness === 'bright' || analysis.brightness === 'very bright';
   const isVideo = analysis.fileType === 'video';
+  const unknown = analysis.brightness === 'unknown';
   const vis = analysis.visual || {};
   const frame = isVideo ? (vis.frame || vis) : vis;
   const hasP = frame.has_particles || false;
   const pats = frame.patterns || [];
+  const hasVis = pats.length > 0;
 
-  push(isVideo ? 'video' : 'photo');
+  // --- Type ---
+  if (isVideo) {
+    push('video', 'animation', 'loop', 'motion');
+  } else {
+    push('photo');
+  }
+
+  // --- Colors ---
   for (const c of C) push(c);
 
-  if (hasP) {
-    push('particle', 'light', 'glow', 'flare', 'sparkle', 'bokeh', 'dust');
-    push('abstract', 'background', 'texture', 'pattern', 'wallpaper', 'backdrop', 'gradient', 'overlay');
-    push('design', 'graphic', 'element', 'shape', 'geometric', 'minimal', 'modern', 'elegant', 'creative');
+  // --- Core abstract/video keywords (always) ---
+  if (isVideo) {
+    push('background', 'abstract', 'overlay', 'design', 'graphic', 'element', 'texture', 'effect');
   }
-  if (pats.includes('smooth') && !hasP) {
-    push('gradient', 'geometric', 'minimal', 'modern', 'elegant');
-    push('abstract', 'background', 'texture', 'pattern', 'wallpaper', 'backdrop');
-    push('design', 'graphic', 'element', 'shape', 'line', 'wave', 'curve');
+
+  // --- Visual analysis keywords ---
+  if (hasVis) {
+    if (hasP) {
+      push('particle', 'light', 'glow', 'flare', 'sparkle', 'bokeh', 'dust');
+    }
+    if (pats.includes('many particles')) {
+      push('scattered', 'floating');
+    }
+    if (pats.includes('smooth')) {
+      push('smooth', 'soft', 'gradient', 'elegant');
+    }
+    if (isDark) {
+      push('night', 'shadow', 'moody', 'dramatic', 'star', 'space');
+    }
+  } else {
+    // Fallback when no visual data (web UI can't run OpenCV)
+    if (isDark || unknown) {
+      push('dark', 'night', 'shadow', 'star', 'space', 'atmosphere');
+    }
+    if (isBright) {
+      push('light', 'bright', 'clear');
+    }
+    if (unknown && isVideo) {
+      push('particle', 'light', 'glow', 'effect', 'design');
+    }
   }
-  if (isDark) {
-    push('night', 'shadow', 'moody', 'mysterious', 'dramatic', 'smoke', 'fog', 'dust');
-    push('moon', 'star', 'galaxy', 'space');
-  }
+
+  // --- Orientation ---
+  const ori = analysis.orientation || '';
+  if (ori === 'landscape') push('horizontal', 'wide');
+  else if (ori === 'portrait') push('vertical', 'tall');
+
+  // --- Resolution ---
+  const w = analysis.width || 0;
+  if (w >= 3840) push('4k', 'ultra hd');
+  else if (w >= 1920) push('full hd', 'hd');
 
   return keywords.slice(0, maxKeywords);
 }
