@@ -922,23 +922,117 @@ document.addEventListener('DOMContentLoaded', () => {
   dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('dragover'); handleFiles(e.dataTransfer.files); });
 });
 
+function extractColorsFromCanvas(canvas) {
+  const ctx = canvas.getContext('2d');
+  const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+  const cmap = {};
+  for (let i = 0; i < d.length; i += 16) {
+    const k = Math.floor(d[i]/32)*32+','+Math.floor(d[i+1]/32)*32+','+Math.floor(d[i+2]/32)*32;
+    cmap[k] = (cmap[k]||0) + 1;
+  }
+  const sorted = Object.entries(cmap).sort((a,b) => b[1]-a[1]);
+  const total = sorted.reduce((s,[,c]) => s+c, 0);
+  const colorNames = {'255,0,0':'red','0,255,0':'green','0,0,255':'blue','255,255,0':'yellow','255,165,0':'orange','0,0,0':'black','128,128,128':'gray','200,200,200':'light gray','255,255,255':'white','165,42,42':'brown','0,128,128':'teal','255,228,196':'bisque','70,130,180':'steel blue','255,20,147':'deep pink'};
+  const named = [];
+  for (const [key, cnt] of sorted.slice(0,5)) {
+    const [r,g,b] = key.split(',').map(Number);
+    let name = colorNames[key];
+    if (!name) { let bd = Infinity; for (const [ck,cn] of Object.entries(colorNames)) { const [cr,cg,cb]=ck.split(',').map(Number); const d = (r-cr)**2+(g-cg)**2+(b-cb)**2; if (d<bd){bd=d;name=cn;} } }
+    named.push({rgb:[r,g,b], name: name||'colorful', ratio: Math.round(cnt/total*1000)/10});
+  }
+  let sum = 0;
+  for (let i = 0; i < d.length; i += 4) sum += d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114;
+  const brightness = sum/(d.length/4) > 200 ? 'very bright' : sum/(d.length/4) > 150 ? 'bright' : sum/(d.length/4) > 100 ? 'medium' : sum/(d.length/4) > 50 ? 'dark' : 'very dark';
+  return { colors: named, brightness };
+}
+
+function analyzeImageFile(file, analysis, readerResult) {
+  const img = new Image();
+  img.onload = function() {
+    analysis.width = img.width;
+    analysis.height = img.height;
+    analysis.orientation = img.width > img.height*1.1 ? 'landscape' : img.height > img.width*1.1 ? 'portrait' : 'square';
+    const canvas = document.createElement('canvas'); canvas.width = 100; canvas.height = 100;
+    const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, 100, 100);
+    const result = extractColorsFromCanvas(canvas);
+    analysis.dominantColors = result.colors;
+    analysis.brightness = result.brightness;
+    document.getElementById('imagePreview').src = readerResult;
+    document.getElementById('filePreview').style.display = 'block';
+    displayAnalysisBulk();
+  };
+  img.src = readerResult;
+}
+
+function analyzeVideoFile(file, analysis, onDone) {
+  const url = URL.createObjectURL(file);
+  const video = document.createElement('video');
+  video.preload = 'metadata';
+  const cleanup = () => { URL.revokeObjectURL(url); video.remove(); };
+  video.onloadedmetadata = function() {
+    analysis.width = video.videoWidth;
+    analysis.height = video.videoHeight;
+    analysis.orientation = video.videoWidth > video.videoHeight*1.1 ? 'landscape' : video.videoHeight > video.videoWidth*1.1 ? 'portrait' : 'square';
+    try { video.currentTime = video.duration / 2; } catch(e) { cleanup(); onDone(); }
+  };
+  video.onseeked = function() {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 100; canvas.height = 100;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, 100, 100);
+      const result = extractColorsFromCanvas(canvas);
+      analysis.dominantColors = result.colors;
+      analysis.brightness = result.brightness;
+    } catch(e) { /* keep defaults */ }
+    cleanup();
+    onDone();
+  };
+  video.onerror = function() { cleanup(); onDone(); };
+  video.src = url;
+  video.load();
+}
+
 function handleFiles(files) {
   if (!files || files.length === 0) return;
+  let pending = 0;
   for (const file of files) {
     uploadedFiles.push(file);
     const ext = '.' + file.name.split('.').pop().toLowerCase();
     const imgExts = ['.jpg','.jpeg','.png','.webp','.bmp','.tiff'];
+    const vidExts = ['.mp4','.mov','.avi'];
     const isImage = imgExts.includes(ext);
+    const isVideo = vidExts.includes(ext);
     const analysis = {
       filename: file.name.replace(/\.[^/.]+$/,''), extension: ext,
-      fileType: isImage ? 'photo' : ['.svg','.ai','.eps'].includes(ext) ? 'vector' : ['.mp4','.mov','.avi'].includes(ext) ? 'video' : 'unknown',
+      fileType: isImage ? 'photo' : ['.svg','.ai','.eps'].includes(ext) ? 'vector' : isVideo ? 'video' : 'unknown',
       sizeKB: Math.round(file.size/1024*10)/10, width: 0, height: 0,
       orientation: 'unknown', brightness: 'unknown', dominantColors: [], hasTransparency: false,
       file: file
     };
     fileAnalyses.push(analysis);
+
+    const idx = fileAnalyses.length - 1;
+    if (isImage) {
+      pending++;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        analyzeImageFile(file, fileAnalyses[idx], e.target.result);
+        if (--pending === 0) finalizeHandleFiles();
+      };
+      reader.readAsDataURL(file);
+    } else if (isVideo) {
+      pending++;
+      analyzeVideoFile(file, fileAnalyses[idx], function() {
+        if (--pending === 0) finalizeHandleFiles();
+      });
+    }
   }
 
+  if (pending === 0) finalizeHandleFiles();
+}
+
+function finalizeHandleFiles() {
   const dz = document.getElementById('dropzone');
   dz.querySelector('.dropzone-text').textContent = `${uploadedFiles.length} files uploaded`;
   dz.querySelector('.icon-circle').textContent = '\u2713';
@@ -950,46 +1044,12 @@ function handleFiles(files) {
   listDiv.innerHTML = uploadedFiles.map((f, i) => `<div style="padding:2px 0;font-size:11px;">${i+1}. ${f.name} (${(f.size/1024).toFixed(1)} KB)</div>`).join('');
   document.getElementById('fileListContainer').style.display = 'block';
 
-  // Analyze first image
-  const firstImg = uploadedFiles.find(f => ['.jpg','.jpeg','.png','.webp','.bmp','.tiff'].includes('.'+f.name.split('.').pop().toLowerCase()));
-  if (firstImg) {
-    const reader = new FileReader();
-    reader.onload = function(e) {
-      const img = new Image();
-      img.onload = function() {
-        const a = fileAnalyses[uploadedFiles.indexOf(firstImg)];
-        a.width = img.width; a.height = img.height;
-        a.orientation = img.width > img.height*1.1 ? 'landscape' : img.height > img.width*1.1 ? 'portrait' : 'square';
-        document.getElementById('imagePreview').src = e.target.result;
-        document.getElementById('filePreview').style.display = 'block';
-
-        const canvas = document.createElement('canvas'); canvas.width = 100; canvas.height = 100;
-        const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, 100, 100);
-        const d = ctx.getImageData(0,0,100,100).data;
-        const cmap = {};
-        for (let i = 0; i < d.length; i += 16) {
-          const k = Math.floor(d[i]/32)*32+','+Math.floor(d[i+1]/32)*32+','+Math.floor(d[i+2]/32)*32;
-          cmap[k] = (cmap[k]||0) + 1;
-        }
-        const sorted = Object.entries(cmap).sort((a,b) => b[1]-a[1]);
-        const total = sorted.reduce((s,[,c]) => s+c, 0);
-        const colorNames = {'255,0,0':'red','0,255,0':'green','0,0,255':'blue','255,255,0':'yellow','255,165,0':'orange','0,0,0':'black','128,128,128':'gray','200,200,200':'light gray','255,255,255':'white','165,42,42':'brown','0,128,128':'teal','255,228,196':'bisque','70,130,180':'steel blue','255,20,147':'deep pink'};
-        const named = [];
-        for (const [key, cnt] of sorted.slice(0,5)) {
-          const [r,g,b] = key.split(',').map(Number);
-          let name = colorNames[key];
-          if (!name) { let bd = Infinity; for (const [ck,cn] of Object.entries(colorNames)) { const [cr,cg,cb]=ck.split(',').map(Number); const d = (r-cr)**2+(g-cg)**2+(b-cb)**2; if (d<bd){bd=d;name=cn;} } }
-          named.push({rgb:[r,g,b], name: name||'colorful', ratio: Math.round(cnt/total*1000)/10});
-        }
-        a.dominantColors = named;
-        let sum = 0; for (let i = 0; i < d.length; i += 4) sum += d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114;
-        a.brightness = sum/(d.length/4) > 200 ? 'very bright' : sum/(d.length/4) > 150 ? 'bright' : sum/(d.length/4) > 100 ? 'medium' : sum/(d.length/4) > 50 ? 'dark' : 'very dark';
-        displayAnalysisBulk();
-      }; img.src = e.target.result;
-    }; reader.readAsDataURL(firstImg);
-  } else {
-    displayAnalysisBulk();
+  // Show preview from first image (or first file that has width)
+  const firstWithPreview = fileAnalyses.find(a => a.width > 0);
+  if (firstWithPreview) {
+    document.getElementById('filePreview').style.display = 'block';
   }
+  displayAnalysisBulk();
   showToast(`${uploadedFiles.length} files uploaded`, 'success');
 }
 
@@ -1133,7 +1193,6 @@ function generateFileKeywords(analysis, maxKeywords) {
 
   const C = (analysis.dominantColors || []).slice(0, 3).map(c => c.name);
   const isDark = analysis.brightness === 'dark' || analysis.brightness === 'very dark';
-  const isBright = analysis.brightness === 'bright' || analysis.brightness === 'very bright';
   const isVideo = analysis.fileType === 'video';
   const unknown = analysis.brightness === 'unknown';
   const vis = analysis.visual || {};
@@ -1143,45 +1202,69 @@ function generateFileKeywords(analysis, maxKeywords) {
   const hasVis = pats.length > 0;
 
   // --- Type ---
-  if (isVideo) {
-    push('video', 'animation', 'loop', 'motion');
-  } else {
-    push('photo');
-  }
+  if (isVideo) push('video', 'animation', 'loop', 'motion');
+  else push('photo');
 
   // --- Colors ---
   for (const c of C) push(c);
 
-  // --- Core abstract/video keywords (always) ---
+  // --- Must-have for video ---
   if (isVideo) {
     push('background', 'abstract', 'overlay', 'design', 'graphic', 'element', 'texture', 'effect');
   }
 
-  // --- Visual analysis keywords ---
+  // --- Visual analysis driven keywords ---
   if (hasVis) {
-    if (hasP) {
-      push('particle', 'light', 'glow', 'flare', 'sparkle', 'bokeh', 'dust');
+    if (hasP) push('particle', 'light', 'glow', 'flare', 'sparkle', 'bokeh', 'dust', 'scattered', 'floating');
+    if (pats.includes('smooth')) push('smooth', 'soft', 'gradient', 'elegant');
+    if (isDark) push('night', 'shadow', 'moody', 'dramatic', 'star', 'space');
+  }
+
+  // --- Content-driven keyword groups based on actual colors ---
+  if (!hasVis) {
+    const colorNames = C.join(' ').toLowerCase();
+
+    // Core video keywords (always)
+    const core = [
+      'abstract', 'background', 'backdrop', 'texture', 'pattern', 'wallpaper',
+      'gradient', 'overlay', 'effect', 'transition',
+      'design', 'graphic', 'element',
+      'geometric', 'minimal', 'modern', 'elegant', 'creative',
+      'motion', 'movement', 'gentle', 'soft', 'smooth',
+      'loop', 'seamless', 'animation', 'animated',
+      'video', 'footage',
+    ];
+    for (const kw of core) push(kw);
+
+    // Color-specific groups
+    if (/green|lime|olive/.test(colorNames)) {
+      push('green screen', 'chroma key', 'keying', 'compositing', 'isolated');
     }
-    if (pats.includes('many particles')) {
-      push('scattered', 'floating');
+    if (/red|pink|rose|magenta/.test(colorNames)) {
+      push('love', 'heart', 'romantic', 'valentine', 'celebration', 'wedding', 'passion');
     }
-    if (pats.includes('smooth')) {
-      push('smooth', 'soft', 'gradient', 'elegant');
+    if (/gold|yellow|amber|orange/.test(colorNames)) {
+      push('gold', 'luxury', 'elegant', 'premium', 'sparkle', 'glow', 'shimmer');
     }
+    if (/white|light|snow|pale/.test(colorNames)) {
+      push('snow', 'winter', 'cold', 'ice', 'frost', 'crystal', 'clean', 'pure', 'elegant');
+    }
+    if (/blue|azure|cyan|teal/.test(colorNames)) {
+      push('sky', 'space', 'water', 'ocean', 'galaxy', 'universe', 'cosmic');
+    }
+    if (/black|dark|gray|charcoal/.test(colorNames)) {
+      push('dark', 'night', 'shadow', 'moody', 'dramatic', 'mysterious', 'star', 'space', 'cosmic', 'galaxy', 'midnight');
+    }
+
+    // Brightness based
     if (isDark) {
-      push('night', 'shadow', 'moody', 'dramatic', 'star', 'space');
+      push('dark', 'night', 'shadow', 'moody', 'mysterious', 'dramatic', 'atmosphere');
     }
-  } else {
-    // Fallback when no visual data (web UI can't run OpenCV)
-    if (isDark || unknown) {
-      push('dark', 'night', 'shadow', 'star', 'space', 'atmosphere');
-    }
-    if (isBright) {
-      push('light', 'bright', 'clear');
-    }
-    if (unknown && isVideo) {
-      push('particle', 'light', 'glow', 'effect', 'design');
-    }
+
+    // Shape/particle keywords for all abstract videos
+    push('particle', 'light', 'glow', 'flare', 'sparkle', 'bokeh', 'dust',
+         'falling', 'floating', 'drifting', 'flowing',
+         'shape', 'curve', 'line', 'wave');
   }
 
   // --- Orientation ---
