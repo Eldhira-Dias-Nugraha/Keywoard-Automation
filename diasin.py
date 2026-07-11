@@ -437,17 +437,22 @@ class DiasinApp:
         analysis = entry["analysis"]
 
         self.kw_text.delete(1.0, tk.END)
-        kws = [k.strip() for k in data[0]["keywords"].split(",")]
+        row0 = data[0]
+        kw_key = "keywords" if "keywords" in row0 else "Keywords"
+        kws = [k.strip() for k in row0[kw_key].split(",")]
         for i, kw in enumerate(kws, 1):
             self.kw_text.insert(tk.END, f"{i:>3}. {kw}\n")
         self.kw_count.config(text=str(len(kws)))
 
         self.td_text.delete(1.0, tk.END)
         for i, row in enumerate(data):
+            fn = row.get("filename") or row.get("Filename", "?")
+            cat = row.get("category") or row.get("Category", "?")
+            ti = row.get("title") or row.get("Title", "?")
             self.td_text.insert(tk.END, f"{'='*40}\n  SET {i+1}\n{'='*40}\n")
-            self.td_text.insert(tk.END, f"  File: {row['filename']}\n")
-            self.td_text.insert(tk.END, f"  [{row['category']}]\n\n")
-            self.td_text.insert(tk.END, f"  Title:\n  {row['title']}\n\n")
+            self.td_text.insert(tk.END, f"  File: {fn}\n")
+            self.td_text.insert(tk.END, f"  [{cat}]\n\n")
+            self.td_text.insert(tk.END, f"  Title:\n  {ti}\n\n")
 
     # ==================== MOVE / COPY ====================
     def _set_destination(self):
@@ -469,7 +474,7 @@ class DiasinApp:
         errors = 0
         for stem, entry in self.generated_data_map.items():
             source = entry["analysis"]["filepath"]
-            title = entry["data"][0]["title"]
+            title = entry["data"][0].get("title") or entry["data"][0].get("Title", "")
             safe_name = "".join(c if c.isalnum() or c in " _-" else "_" for c in title)[:60]
 
             try:

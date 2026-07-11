@@ -1265,10 +1265,10 @@ class KeywordEngine:
 
     def get_platform_csv_row(self, row_data, platform="Adobe Stock"):
         return {
-            "Filename": row_data.get("filename", ""),
-            "Title": row_data.get("title", ""),
-            "Keywords": row_data.get("keywords", ""),
-            "Category": row_data.get("category", "8")
+            "Filename": row_data.get("filename") or row_data.get("Filename", ""),
+            "Title": row_data.get("title") or row_data.get("Title", ""),
+            "Keywords": row_data.get("keywords") or row_data.get("Keywords", ""),
+            "Category": row_data.get("category") or row_data.get("Category", "8")
         }
 
     def move_file_with_rename(self, source_path, dest_dir, new_name=None):
