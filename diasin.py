@@ -374,10 +374,13 @@ class DiasinApp:
             self._status("Already processing...", THEME["warning"])
             return
         if not self.selected_indices:
-            messagebox.showwarning("", "Pilih file dulu (centang).")
+            self.selected_indices = set(range(len(self.files_list)))
+        if not self.selected_indices:
+            self._status("No files to process.", THEME["warning"])
             return
 
         indices = list(self.selected_indices)
+        self.selected_indices = set(indices)
         plat = self.platform_var.get()
         self._processing = True
         self._processing_results = {}
