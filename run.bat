@@ -1,4 +1,3 @@
 @echo off
 title Diasin - Keyword Generator
-python diasin.py
-pause
+start "" "%~dp0Diasin.exe"
