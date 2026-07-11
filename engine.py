@@ -237,8 +237,13 @@ class VisualAnalyzer:
             img = cv2.imread(path)
             if img is None:
                 return None
-            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             h, w = img.shape[:2]
+            # Resize large images for faster analysis
+            if max(h, w) > 640:
+                scale = 640 / max(h, w)
+                img = cv2.resize(img, None, fx=scale, fy=scale)
+                h, w = img.shape[:2]
+            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
             result = {
                 "patterns": [],
@@ -330,11 +335,15 @@ class VisualAnalyzer:
                 cap.release()
                 return None
 
-            # extract frame for image analysis
+            # extract frame for image analysis (resize for speed)
             cap.set(cv2.CAP_PROP_POS_FRAMES, total_frames // 2)
             ret, mid_frame = cap.read()
             frame_analysis = None
             if ret:
+                h, w = mid_frame.shape[:2]
+                if max(h, w) > 640:
+                    scale = 640 / max(h, w)
+                    mid_frame = cv2.resize(mid_frame, None, fx=scale, fy=scale)
                 temp_frame = path + "_vframe.jpg"
                 cv2.imwrite(temp_frame, mid_frame)
                 frame_analysis = VisualAnalyzer.analyze_image(temp_frame)
@@ -343,7 +352,7 @@ class VisualAnalyzer:
                 except:
                     pass
 
-            sample_frames = min(5, total_frames)
+            sample_frames = min(3, total_frames)
             prev_gray = None
             motion_values = []
 
