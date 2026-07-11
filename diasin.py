@@ -113,6 +113,15 @@ class DiasinApp:
                                      fg=THEME["text_muted"], bg=THEME["card2"])
         self.folder_label.pack(side="right", padx=(0, 8))
 
+        # ===== PROGRESS BAR =====
+        prog_frame = tk.Frame(mc, bg=THEME["bg"])
+        prog_frame.pack(fill="x", pady=(0, 6))
+        self.progress = ttk.Progressbar(prog_frame, mode="determinate", length=0)
+        self.progress.pack(fill="x", padx=0)
+        self.prog_label = tk.Label(prog_frame, text="", font=("Segoe UI", 9),
+                                   fg=THEME["text_sec"], bg=THEME["bg"])
+        self.prog_label.pack(anchor="e")
+
         # ===== MAIN BODY =====
         body = tk.Frame(mc, bg=THEME["bg"])
         body.pack(fill="both", expand=True)
@@ -257,7 +266,6 @@ class DiasinApp:
         self.status_label = tk.Label(abf, text="Ready.", font=("Segoe UI", 9),
                                      fg=THEME["text_sec"], bg=THEME["card"])
         self.status_label.pack(side="right")
-        self.progress = ttk.Progressbar(abf, mode="determinate", length=120)
 
     # ==================== FILE BROWSER ====================
     def _open_folder(self):
@@ -386,37 +394,28 @@ class DiasinApp:
         self._processing_results = {}
         self._processed_count = 0
         self._total_to_process = len(indices)
-        self._status(f"Processing 0/{self._total_to_process}...", THEME["warning"])
+        self._status(f"0/{self._total_to_process} Processing...", THEME["warning"])
         self._show_progress(True, self._total_to_process)
 
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
-        def process_one(idx):
-            f = self.files_list[idx]
-            try:
-                data, analysis = self.engine.generate_from_file(
-                    f["path"], platform=plat, num_keywords=50, num_titles=3, num_desc=1)
-                return f["stem"], {"data": data, "analysis": analysis}
-            except Exception as e:
-                print(f"Skip {f['name']}: {e}")
-                return f["stem"], None
-
         def worker():
-            with ThreadPoolExecutor(max_workers=3) as ex:
-                futures = {ex.submit(process_one, idx): idx for idx in indices}
-                for future in as_completed(futures):
-                    stem, result = future.result()
-                    if result:
-                        self._processing_results[stem] = result
-                    self._processed_count += 1
-                    self.window.after(0, self._update_progress, stem)
+            for idx in indices:
+                f = self.files_list[idx]
+                try:
+                    data, analysis = self.engine.generate_from_file(
+                        f["path"], platform=plat, num_keywords=50, num_titles=3, num_desc=1)
+                    self._processing_results[f["stem"]] = {"data": data, "analysis": analysis}
+                except Exception as e:
+                    print(f"Skip {f['name']}: {e}")
+                self._processed_count += 1
+                self.window.after(0, self._update_progress, f["name"])
             self.window.after(0, self._on_processing_done)
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _update_progress(self, stem):
+    def _update_progress(self, fname):
         self.progress["value"] = self._processed_count
-        self._status(f"Processing {self._processed_count}/{self._total_to_process}...", THEME["warning"])
+        self.prog_label.config(text=f"{self._processed_count} / {self._total_to_process}  {fname}")
+        self._status(f"{self._processed_count}/{self._total_to_process}", THEME["warning"])
         self.window.update_idletasks()
 
     def _on_processing_done(self):
@@ -598,11 +597,14 @@ class DiasinApp:
         if show:
             self.progress["value"] = 0
             self.progress["maximum"] = maximum
-            self.progress.pack(side="right", padx=(8, 4))
-            self.status_icon.config(text="\u23f3", fg=THEME["warning"])
+            self.prog_label.config(text=f"0 / {maximum}")
+            self.progress.pack(fill="x", padx=0)
+            self.prog_label.pack(anchor="e")
         else:
             self.progress.pack_forget()
-            self.status_icon.config(text="\u26a1", fg=THEME["accent"])
+            self.prog_label.pack_forget()
+        self.status_icon.config(text="\u23f3" if show else "\u26a1",
+                                fg=THEME["warning"] if show else THEME["accent"])
 
     def _copy_text(self, widget):
         c = widget.get(1.0, tk.END).strip()
