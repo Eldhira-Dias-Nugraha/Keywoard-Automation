@@ -1052,82 +1052,67 @@ class KeywordEngine:
         is_video = analysis["file_type"] == "video"
         vis = analysis.get("visual") or {}
         frame = vis.get("frame") if is_video else vis
+        if frame is None and is_video:
+            frame = vis
         has_p = frame.get("has_particles", False) if frame else False
         pats = frame.get("patterns", []) if frame else []
+        has_vis = frame is not None and bool(frame.get("patterns")) if isinstance(frame, dict) else bool(frame)
 
         # --- Content-type foundation ---
-        push("video" if is_video else "photo")
+        if is_video:
+            push("video"); push("animation"); push("loop"); push("motion")
+        else:
+            push("photo")
 
         # --- Colors ---
         for c in C:
             push(c)
-
-        # --- Curated groups ---
-        GROUPS = {
-            "particle": ["particle", "light", "glow", "flare", "sparkle",
-                         "twinkle", "bokeh", "dust", "smoke", "bubble"],
-            "abstract": ["abstract", "background", "texture", "pattern",
-                         "wallpaper", "backdrop", "gradient", "overlay",
-                         "design", "graphic", "element", "shape",
-                         "geometric", "minimal", "modern", "elegant",
-                         "creative", "luxury", "frame", "border"],
-            "dark": ["night", "shadow", "moody", "mysterious", "dramatic",
-                     "smoke", "fog", "dust", "moon", "star", "galaxy", "space"],
-            "smooth": ["gradient", "geometric", "minimal", "modern",
-                       "elegant", "line", "wave", "curve", "shape"],
-            "nature": ["sky", "sun", "moon", "star", "landscape",
-                       "forest", "tree", "leaf", "flower", "grass",
-                       "mountain", "river", "ocean", "beach",
-                       "animal", "bird", "butterfly", "wildlife",
-                       "cloud", "water", "fire"],
-            "lifestyle": ["business", "finance", "marketing", "branding",
-                          "technology", "digital", "network",
-                          "software", "website", "mobile",
-                          "education", "school", "learning",
-                          "medical", "health", "science",
-                          "food", "fruit", "coffee", "tea",
-                          "holiday", "christmas", "new year",
-                          "birthday", "love", "heart", "wedding",
-                          "poster", "flyer", "banner", "brochure",
-                          "illustration", "vector", "icon", "symbol"],
-            "transparent": ["transparent", "isolated", "png", "svg",
-                            "icon", "symbol", "sticker", "label",
-                            "illustration", "vector"],
-            "vibrant": ["colorful", "pop art", "retro", "vintage",
-                        "comic", "cartoon", "halftone",
-                        "brush", "paint", "ink", "sketch", "drawing",
-                        "watercolor"],
-        }
-
-        active = set()
-        if has_p:
-            active.add("particle")
-            active.add("abstract")
-        elif "smooth" in pats:
-            active.add("smooth")
-            active.add("abstract")
-        if "vibrant" in pats and not has_p:
-            active.add("vibrant")
         if is_dark:
-            active.add("dark")
-            active.add("abstract")
-        if analysis.get("has_transparency"):
-            active.add("transparent")
+            push("dark")
+        elif not is_video:
+            push("bright")
 
-        seen = set()
-        for g in active:
-            for kw in GROUPS.get(g, []):
-                w = kw.lower().strip()
-                if w not in seen:
-                    push(kw)
-                    seen.add(w)
+        # --- Always include core abstract/background keywords for videos ---
+        if is_video:
+            push("background"); push("abstract"); push("overlay")
+            push("design"); push("graphic"); push("element")
+            push("visual"); push("effect"); push("texture")
 
-        # --- Technical ---
+        # --- Visual analysis-driven keywords ---
+        if has_vis:
+            if has_p:
+                push("particle"); push("light"); push("glow")
+                push("flare"); push("sparkle"); push("bokeh")
+                push("dust")
+            if "many particles" in pats:
+                push("scattered"); push("floating")
+            if "smooth" in pats:
+                push("smooth"); push("soft"); push("gradient")
+                push("elegant")
+            if "vibrant" in pats and not has_p:
+                push("vibrant"); push("colorful")
+            if is_dark:
+                push("night"); push("shadow"); push("moody")
+                push("dramatic"); push("star"); push("space")
+            if frame.get("contrast") == "low":
+                push("soft"); push("subtle")
+        else:
+            if is_dark:
+                push("night"); push("shadow"); push("star"); push("space")
+
+        # --- Orientation ---
         ori = analysis.get("orientation", "")
-        if ori == "landscape":
-            push("horizontal")
-        elif ori == "portrait":
-            push("vertical")
+        if ori in ("landscape", "wide"):
+            push("horizontal"); push("wide")
+        elif ori in ("portrait", "tall"):
+            push("vertical"); push("tall")
+
+        # --- Resolution ---
+        w = analysis.get("width", 0)
+        if w >= 3840:
+            push("4k"); push("ultra hd")
+        elif w >= 1920:
+            push("full hd"); push("hd")
 
         return keywords[:max_keywords]
 
